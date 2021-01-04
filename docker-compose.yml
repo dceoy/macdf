@@ -1,0 +1,15 @@
+---
+version: '3'
+
+services:
+  macdf:
+    container_name: macdf
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dceoy/macdf:latest
+    volumes:
+      - ${PWD}:/wd
+    working_dir: /wd
+    entrypoint:
+      - macdf
