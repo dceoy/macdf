@@ -12,7 +12,7 @@ setup(
     version=__version__,
     author='Daichi Narushima',
     author_email='dnarsil+github@gmail.com',
-    description='MACD-based Forex Trader',
+    description='MACD-based Forex Trader for Oanda API',
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/dceoy/macdf',
