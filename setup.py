@@ -20,7 +20,7 @@ setup(
     include_package_data=True,
     install_requires=[
         'docopt', 'numpy', 'oanda-cli', 'pandas', 'pyyaml', 'redis',
-        'scikit-learn', 'statsmodels', 'v20'
+        'scikit-learn', 'statsmodels', 'tifft', 'v20'
     ],
     entry_points={'console_scripts': ['macdf=macdf.cli:main']},
     classifiers=[
