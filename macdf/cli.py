@@ -62,7 +62,7 @@ from oandacli.call.order import close_positions
 from oandacli.util.logger import set_log_config
 
 from . import __version__
-from .trader import StandaloneTrader
+from .trader import AutoTrader
 
 
 def main():
@@ -73,35 +73,31 @@ def main():
     oanda_account_id = (args['--oanda-account'] or os.getenv('OANDA_ID'))
     oanda_api_token = (args['--oanda-token'] or os.getenv('OANDA_TOKEN'))
     if args.get('close'):
-        oanda_api = _create_oanda_api(
-            api_token=oanda_api_token, environment=args['--oanda-env']
-        )
         close_positions(
-            api=oanda_api, account_id=oanda_account_id,
-            instruments=args['<instrument>']
+            api=_create_oanda_api(
+                api_token=oanda_api_token, environment=args['--oanda-env']
+            ),
+            account_id=oanda_account_id, instruments=args['<instrument>']
         )
     elif args.get('trade'):
-        _invoke_trader(
+        logger.info('Autonomous trading')
+        AutoTrader(
             oanda_account_id=oanda_account_id, oanda_api_token=oanda_api_token,
             oanda_environment=args['--oanda-env'],
             instruments=args['<instrument>'],
-
-            fast_ema_span=args['--fast-ema-span'],
-            slow_ema_span=args['--slow-ema-span'],
-            macd_ema_span=args['--macd-ema-span']
-        )
-
-
-def _invoke_trader(instruments, log_dir_path=None,
-                   ignore_api_error=False, quiet=False, dry_run=False):
-    logger = logging.getLogger(__name__)
-    logger.info('Autonomous trading')
-    trader = StandaloneTrader(
-        instruments=instruments, log_dir_path=log_dir_path,
-        ignore_api_error=ignore_api_error, quiet=quiet, dry_run=False
-    )
-    logger.info('Invoke a trader')
-    trader.invoke()
+            granularities=args['--granularity'],
+            betting_system=args['--betting-system'],
+            unit_margin_ratio=float(args['--unit-margin']),
+            preserved_margin_ratio=float(args['--preserved-margin']),
+            take_profit_limit_ratio=float(args['--take-profit-limit']),
+            trailing_stop_limit_ratio=float(args['--trailing-stop-limit']),
+            stop_loss_limit_ratio=float(args['--stop-loss-limit']),
+            max_spread_ratio=float(args['--max-spread']),
+            fast_ema_span=float(args['--fast-ema-span']),
+            slow_ema_span=float(args['--slow-ema-span']),
+            macd_ema_span=float(args['--macd-ema-span']),
+            log_dir_path=None, quiet=args['--quiet'], dry_run=args['--dry-run']
+        ).invoke()
 
 
 def _create_oanda_api(api_token, environment='trade', stream=False, **kwargs):

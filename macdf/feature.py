@@ -6,14 +6,14 @@ import numpy as np
 
 
 class LogReturnFeature(object):
-    def __init__(self, type, drop_zero=False):
+    def __init__(self, type='LR', drop_zero=False):
         self.__logger = logging.getLogger(__name__)
         self.__drop_zero = drop_zero
-        if type and type.lower() == 'lr velocity':
+        if type and type.lower() in {'lrv', 'lr velocity'}:
             self.code = 'LRV'
-        elif type and type.lower() == 'lr acceleration':
+        elif type and type.lower() in {'lra', 'lr acceleration'}:
             self.code = 'LRA'
-        elif type and type.lower() in ['lr', 'log return']:
+        elif type and type.lower() in {'lr', 'log return'}:
             self.code = 'LR'
         else:
             raise ValueError(f'invalid feature type:\t{type}')
@@ -28,10 +28,8 @@ class LogReturnFeature(object):
 
     def log_return(self, df_rate, return_df=False):
         df_lr = df_rate.reset_index().assign(
-            log_diff=lambda d: np.log(d[['ask', 'bid']].mean(axis=1)).diff(),
+            log_return=lambda d: np.log(d[['ask', 'bid']].mean(axis=1)).diff(),
             delta_sec=lambda d: d['time'].diff().dt.total_seconds()
-        ).assign(
-            log_return=lambda d: self._weighted_log_diff(df=d)
         ).pipe(
             lambda d: (
                 d.iloc[d['log_return'].to_numpy().nonzero()[0]]
@@ -42,17 +40,6 @@ class LogReturnFeature(object):
             'Log return (tail):\t{}'.format(df_lr['log_return'].tail().values)
         )
         return (df_lr if return_df else df_lr['log_return'])
-
-    def _weighted_log_diff(self, df):
-        return df.assign(
-            weight=lambda d: np.reciprocal(
-                np.log(d['ask']) - np.log(d['bid'])
-            ).pipe(
-                lambda s: (s / s.mean()) * (d['volume'] / d['volume'].mean())
-            )
-        ).pipe(
-            lambda d: d['log_diff'] * d['weight']
-        )
 
     def log_return_velocity(self, df_rate, return_df=False):
         df_lrv = self.log_return(

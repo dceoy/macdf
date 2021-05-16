@@ -9,11 +9,14 @@ class BettingSystem(object):
     def __init__(self, strategy='Martingale'):
         self.__logger = logging.getLogger(__name__)
         strategies = [
-            'Martingale', 'Paroli', "d'Alembert", 'Pyramid', "Oscar's grind"
+            'Martingale', 'Paroli', "d'Alembert", 'Pyramid', "Oscar's grind",
+            'Constant'
         ]
         matched_st = [
-            s for s in strategies
-            if strategy.lower().replace("'", '') == s.lower().replace("'", '')
+            s for s in strategies if (
+                strategy.lower().replace("'", '').replace(' ', '')
+                == s.lower().replace("'", '').replace(' ', '')
+            )
         ]
         if matched_st:
             self.strategy = matched_st[0]
@@ -69,5 +72,7 @@ class BettingSystem(object):
                 return (last_size + unit_size)
             else:
                 return last_size
+        elif self.strategy == 'Constant':
+            return unit_size
         else:
             raise ValueError('invalid strategy name')
