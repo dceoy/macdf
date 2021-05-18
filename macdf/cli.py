@@ -9,7 +9,8 @@ Usage:
         [--oanda-env=<str>] [<instrument>...]
     macdf trade [--debug|--info] [--oanda-account=<id>] [--oanda-token=<str>]
         [--oanda-env=<str>] [--quiet] [--dry-run] [--granularity=<str>]
-        [--betting-system=<str>] [--unit-margin=<ratio>]
+        [--betting-system=<str>] [--scanned-transaction-count=<int>]
+        [--feature-type=<str>] [--unit-margin=<ratio>]
         [--preserved-margin=<ratio>] [--take-profit-limit=<float>]
         [--trailing-stop-limit=<float>] [--stop-loss-limit=<float>]
         [--max-spread=<float>] [--fast-ema-span=<int>] [--slow-ema-span=<int>]
@@ -19,7 +20,7 @@ Options:
     -h, --help              Print help and exit
     --version               Print version and exit
     --debug, --info         Execute a command with debug|info messages
-    --oanda-account=<id>    Set an Oanda account ID [$OANDA_ID]
+    --oanda-account=<id>    Set an Oanda account ID [$OANDA_ACCOUNT]
     --oanda-token=<str>     Set an Oanda API token [$OANDA_TOKEN]
     --oanda-env=<str>       Set an Oanda trading environment [default: trade]
                             { trade, practice }
@@ -31,6 +32,10 @@ Options:
     --betting-system=<str>  Set the betting system [default: constant]
                             { constant, martingale, paroli, dalembert,
                               oscarsgrind }
+    --scanned-transaction-count=<int>
+                            Set the transaction count to scan [default: 0]
+    --feature-type=<str>    Set the feature type [default: MID]
+                            { MID, LR, LRV, LRA }
     --unit-margin=<ratio>   Set the unit margin ratio to NAV [default: 0.01]
     --preserved-margin=<ratio>
                             Set the preserved margin ratio [default: 0.01]
@@ -70,7 +75,7 @@ def main():
     set_log_config(debug=args['--debug'], info=args['--info'])
     logger = logging.getLogger(__name__)
     logger.debug(f'args:{os.linesep}{args}')
-    oanda_account_id = (args['--oanda-account'] or os.getenv('OANDA_ID'))
+    oanda_account_id = (args['--oanda-account'] or os.getenv('OANDA_ACCOUNT'))
     oanda_api_token = (args['--oanda-token'] or os.getenv('OANDA_TOKEN'))
     if args.get('close'):
         close_positions(
@@ -85,8 +90,10 @@ def main():
             oanda_account_id=oanda_account_id, oanda_api_token=oanda_api_token,
             oanda_environment=args['--oanda-env'],
             instruments=args['<instrument>'],
-            granularities=args['--granularity'],
+            granularities=args['--granularity'].split(','),
             betting_system=args['--betting-system'],
+            scanned_transaction_count=int(args['--scanned-transaction-count']),
+            feature_type=args['--feature-type'],
             unit_margin_ratio=float(args['--unit-margin']),
             preserved_margin_ratio=float(args['--preserved-margin']),
             take_profit_limit_ratio=float(args['--take-profit-limit']),

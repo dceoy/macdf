@@ -12,7 +12,6 @@ from pprint import pformat
 
 import numpy as np
 import pandas as pd
-import yaml
 from oandacli.util.logger import log_response
 from v20 import Context, V20ConnectionError, V20Timeout
 
@@ -24,27 +23,27 @@ class APIResponseError(RuntimeError):
     pass
 
 
-class TraderCore(object):
+class OandaTraderCore(object):
     def __init__(self, instruments, oanda_account_id, oanda_api_token,
                  oanda_environment='trade', betting_system='constant',
-                 unit_margin_ratio=0.01, preserved_margin_ratio=0.01,
-                 take_profit_limit_ratio=0.01, trailing_stop_limit_ratio=0.01,
-                 stop_loss_limit_ratio=0.01, max_spread_ratio=0.01,
+                 scanned_transaction_count=0, unit_margin_ratio=0.01,
+                 preserved_margin_ratio=0.01, take_profit_limit_ratio=0.01,
+                 trailing_stop_limit_ratio=0.01, stop_loss_limit_ratio=0.01,
                  log_dir_path=None, quiet=False, dry_run=False):
         self.__logger = logging.getLogger(__name__)
-        self.__oanda_api = Context(
+        self.__api = Context(
             hostname=f'api-fx{oanda_environment}.oanda.com',
             token=oanda_api_token
         )
-        self.__oanda_account_id = oanda_account_id
+        self.__account_id = oanda_account_id
         self.instruments = instruments
         self.__bs = BettingSystem(strategy=betting_system)
+        self.__scanned_transaction_count = int(scanned_transaction_count)
         self.__unit_margin_ratio = float(unit_margin_ratio)
         self.__preserved_margin_ratio = float(preserved_margin_ratio)
         self.__take_profit_limit_ratio = float(take_profit_limit_ratio)
         self.__trailing_stop_limit_ratio = float(trailing_stop_limit_ratio)
         self.__stop_loss_limit_ratio = float(stop_loss_limit_ratio)
-        self.__max_spread_ratio = float(max_spread_ratio)
         self.__quiet = quiet
         self.__dry_run = dry_run
         if log_dir_path:
@@ -57,6 +56,7 @@ class TraderCore(object):
             self.__log_dir_path = None
             self.__order_log_path = None
             self.__txn_log_path = None
+        self.__anchored_txn_id = None
         self.__last_txn_id = None
         self.pos_dict = dict()
         self.balance = None
@@ -68,10 +68,15 @@ class TraderCore(object):
         self.unit_costs = dict()
 
     def _refresh_account_dicts(self):
-        res = self.__oanda_api.account.get(accountID=self.__account_id)
-        # log_response(res, logger=self.__logger)
-        if 'account' in res.body:
+        res = self.__api.account.get(accountID=self.__account_id)
+        if 'account' in res.body and 'lastTransactionID' in res.body:
             acc = res.body['account']
+            if not self.__anchored_txn_id:
+                self.__anchored_txn_id = max(
+                    0,
+                    int(res.body['lastTransactionID'])
+                    - self.__scanned_transaction_count
+                )
         else:
             raise APIResponseError(
                 'unexpected response:' + os.linesep + pformat(res.body)
@@ -107,9 +112,9 @@ class TraderCore(object):
             )
         else:
             if closing:
-                res = self.__oanda_api.position.close(**f_args)
+                res = self.__api.position.close(**f_args)
             else:
-                res = self.__oanda_api.order.create(**f_args)
+                res = self.__api.order.create(**f_args)
             log_response(res, logger=self.__logger)
             if not (100 <= res.status <= 399):
                 raise APIResponseError(
@@ -132,13 +137,11 @@ class TraderCore(object):
         self._refresh_unit_costs()
 
     def _refresh_txn_list(self):
-        res = (
-            self.__oanda_api.transaction.since(
-                accountID=self.__account_id, id=self.__last_txn_id
-            ) if self.__last_txn_id
-            else self.__oanda_api.transaction.list(accountID=self.__account_id)
+        init = (not self.__last_txn_id)
+        res = self.__api.transaction.since(
+            accountID=self.__account_id,
+            id=(self.__anchored_txn_id if init else self.__last_txn_id)
         )
-        # log_response(res, logger=self.__logger)
         if 'lastTransactionID' in res.body:
             self.__last_txn_id = res.body['lastTransactionID']
         else:
@@ -147,14 +150,16 @@ class TraderCore(object):
             )
         if res.body.get('transactions'):
             t_new = [t.dict() for t in res.body['transactions']]
-            self.print_log(yaml.dump(t_new, default_flow_style=False).strip())
+            self.__logger.info('transactions:' + os.linesep + pformat(t_new))
             self.txn_list = self.txn_list + t_new
-            if self.__txn_log_path:
-                self._write_data(json.dumps(t_new), path=self.__txn_log_path)
+            if not init and t_new:
+                if self.__txn_log_path:
+                    self._write_data(
+                        json.dumps(t_new), path=self.__txn_log_path
+                    )
 
     def _refresh_inst_dict(self):
-        res = self.__oanda_api.account.instruments(accountID=self.__account_id)
-        # log_response(res, logger=self.__logger)
+        res = self.__api.account.instruments(accountID=self.__account_id)
         if 'instruments' in res.body:
             self.__inst_dict = {
                 c.name: vars(c) for c in res.body['instruments']
@@ -165,11 +170,10 @@ class TraderCore(object):
             )
 
     def _refresh_price_dict(self):
-        res = self.__oanda_api.pricing.get(
+        res = self.__api.pricing.get(
             accountID=self.__account_id,
             instruments=','.join(self.__inst_dict.keys())
         )
-        # log_response(res, logger=self.__logger)
         if 'prices' in res.body:
             self.price_dict = {
                 p.instrument: {
@@ -318,21 +322,15 @@ class TraderCore(object):
             print(data, flush=True)
 
     def print_state_line(self, df_rate, add_str):
-        i = df_rate['instrument'].iloc[-1]
-        net_pl = sum([
-            float(t['pl']) for t in self.txn_list
-            if t.get('instrument') == i and t.get('pl')
-        ])
         self.print_log(
-            '|{0:^11}|{1:^29}|{2:^15}|'.format(
-                i,
+            '|{0:^11}|{1:^29}|'.format(
+                df_rate['instrument'].iloc[-1],
                 'B/A:{:>21}'.format(
                     np.array2string(
                         df_rate[['bid', 'ask']].iloc[-1].values,
                         formatter={'float_kind': lambda f: f'{f:8g}'}
                     )
-                ),
-                'PL:{:>8}'.format(f'{net_pl:.1g}')
+                )
             ) + (add_str or '')
         )
 
@@ -363,18 +361,17 @@ class TraderCore(object):
         )
 
     def fetch_candle_df(self, instrument, granularity='S5', count=5000,
-                        complete=True):
-        res = self.__oanda_api.instrument.candles(
+                        complete=False):
+        res = self.__api.instrument.candles(
             instrument=instrument, price='BA', granularity=granularity,
             count=int(count)
         )
-        # log_response(res, logger=self.__logger)
         if 'candles' in res.body:
             return pd.DataFrame([
                 {
                     'time': c.time, 'bid': c.bid.c, 'ask': c.ask.c,
                     'volume': c.volume, 'complete': c.complete
-                } for c in res.body['candles'] if complete or c.complete
+                } for c in res.body['candles'] if c.complete or not complete
             ]).assign(
                 time=lambda d: pd.to_datetime(d['time']), instrument=instrument
             ).set_index('time', drop=True)
@@ -384,10 +381,9 @@ class TraderCore(object):
             )
 
     def fetch_latest_price_df(self, instrument):
-        res = self.__oanda_api.pricing.get(
+        res = self.__api.pricing.get(
             accountID=self.__account_id, instruments=instrument
         )
-        # log_response(res, logger=self.__logger)
         if 'prices' in res.body:
             return pd.DataFrame([
                 {'time': r.time, 'bid': r.closeoutBid, 'ask': r.closeoutAsk}
@@ -401,11 +397,11 @@ class TraderCore(object):
             )
 
 
-class AutoTrader(TraderCore):
-    def __init__(self, granularities='D', n_cache=5000,
-                 preserved_margin_ratio=0.01, ignore_api_error=False, retry=5,
-                 fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
-                 **kwargs):
+class AutoTrader(OandaTraderCore):
+    def __init__(self, granularities='D', preserved_margin_ratio=0.01,
+                 max_spread_ratio=0.01, feature_type='MID',
+                 ignore_api_error=False, retry=1, fast_ema_span=12,
+                 slow_ema_span=26, macd_ema_span=9, **kwargs):
         super().__init__(**kwargs)
         self.__logger = logging.getLogger(__name__)
         self.__ignore_api_error = ignore_api_error
@@ -414,30 +410,32 @@ class AutoTrader(TraderCore):
             {granularities} if isinstance(granularities, str)
             else set(granularities)
         )
-        self.__n_cache = n_cache
         self.__preserved_margin_ratio = preserved_margin_ratio
+        self.__max_spread_ratio = float(max_spread_ratio)
         self.__signal_detector = MacdSignalDetector(
-            feature_type='LRV', drop_zero=True,
-            fast_ema_span=fast_ema_span, slow_ema_span=slow_ema_span,
-            macd_ema_span=macd_ema_span
+            feature_type=feature_type, drop_zero=True,
+            fast_ema_span=int(fast_ema_span),
+            slow_ema_span=int(slow_ema_span),
+            macd_ema_span=int(macd_ema_span)
         )
+        self.__cached_span = min(int(slow_ema_span) * 10, 5000)
         self.__logger.debug('vars(self):\t' + pformat(vars(self)))
 
     def invoke(self):
-        self.print_log('!!! OPEN A DEAL !!!')
         signal.signal(signal.SIGINT, signal.SIG_DFL)
-        for i in self.instruments:
-            for _ in range(self.__retry):
-                try:
-                    self.refresh_oanda_dicts()
-                except (V20ConnectionError, V20Timeout, APIResponseError) as e:
-                    if self.__ignore_api_error:
-                        self.__logger.error(e)
-                    else:
-                        raise e
-                else:
+        for r in range(self.__retry + 1):
+            try:
+                self.refresh_oanda_dicts()
+                for i in self.instruments:
                     self.make_decision(instrument=i)
-                    break
+                    self.refresh_oanda_dicts()
+            except (V20ConnectionError, V20Timeout, APIResponseError) as e:
+                if self.__ignore_api_error or r < self.__retry:
+                    self.__logger.error(e)
+                else:
+                    raise e
+            else:
+                break
 
     def make_decision(self, instrument):
         df_r = self.fetch_latest_price_df(instrument=instrument)
@@ -460,17 +458,15 @@ class AutoTrader(TraderCore):
         sig = self.__signal_detector.detect(
             history_dict={
                 g: self.fetch_candle_df(
-                    instrument=i, granularity=g, count=self.__n_cache
+                    instrument=i, granularity=g, count=self.__cached_span
                 )[['ask', 'bid', 'volume']] for g in self.__granularities
             },
-            pos=pos
+            position_side=(pos['side'] if pos else None)
         )
         if not self.price_dict[i]['tradeable']:
             act = None
             state = 'TRADING HALTED'
-        elif (pos and sig['sig_act']
-              and (sig['sig_act'] == 'closing'
-                   or sig['sig_act'] != pos['side'])):
+        elif pos and sig['sig_act'] == 'closing':
             act = 'closing'
             state = 'CLOSING'
         elif int(self.balance) == 0:
