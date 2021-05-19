@@ -20,11 +20,11 @@ class MacdSignalDetector(object):
             fast_ema_span=fast_ema_span, slow_ema_span=slow_ema_span,
             macd_ema_span=macd_ema_span
         )
-        self.__ewm_kwargs = {'span': macd_ema_span, 'adjust': False}
+        self.__ema_span = macd_ema_span
         self.__fs_method = feature_sieve_method
-        if 'MID' == feature_type:
+        if feature_type in {'MID', 'VEL'}:
             self.__lrf = None
-            self.__feature_code = 'MID'
+            self.__feature_code = feature_type
         else:
             self.__lrf = LogReturnFeature(
                 type=feature_type, drop_zero=drop_zero
@@ -33,13 +33,8 @@ class MacdSignalDetector(object):
 
     def detect(self, history_dict, position_side=None):
         feature_dict = {
-            g: self.__macdc.calculate(
-                values=(
-                    d[['ask', 'bid']].mean(axis=1)
-                    if 'MID' == self.__feature_code else
-                    self.__lrf.series(df_rate=d)
-                ).dropna()
-            ) for g, d in history_dict.items()
+            g: self.__macdc.calculate(values=self._to_feature(df=d))
+            for g, d in history_dict.items()
         }
         if len(feature_dict) == 1:
             granularity = list(feature_dict.keys())[0]
@@ -62,13 +57,20 @@ class MacdSignalDetector(object):
         df_macd = feature_dict[granularity]
         macd = df_macd['macd'].iloc[-1]
         macd_ema = df_macd['macd_ema'].iloc[-1]
-        vol_score = history_dict[granularity].pipe(
+        volume_score = history_dict[granularity].pipe(
             lambda d:
             np.reciprocal((np.log(d['ask']) - np.log(d['bid'])) * d['volume'])
-        ).dropna().ewm(**self.__ewm_kwargs).mean().iloc[-1]
-        if macd > macd_ema and (macd > 0 or vol_score > 0):
+        ).dropna().ewm(span=self.__ema_span).mean().iloc[-1]
+        hv_score = history_dict[granularity].pipe(
+            lambda d: np.log(
+                d[['ask', 'bid']].dropna().mean(axis=1)
+            ).diff().rolling(window=self.__ema_span).std(ddof=0)
+        ).ewm(span=self.__ema_span).mean().iloc[-1]
+        if (macd > macd_ema
+                and (macd > 0 or (volume_score > 0 and hv_score > 0))):
             sig_act = 'long'
-        elif macd < macd_ema and (macd < 0 or vol_score > 0):
+        elif (macd < macd_ema
+              and (macd < 0 or (volume_score > 0 and hv_score > 0))):
             sig_act = 'short'
         elif ((position_side == 'long' and macd < macd_ema)
               or (position_side == 'short' and macd > macd_ema)):
@@ -88,6 +90,19 @@ class MacdSignalDetector(object):
                 )
             )
         }
+
+    def _to_feature(self, df):
+        if 'MID' == self.__feature_code:
+            return df[['ask', 'bid']].dropna().mean(axis=1)
+        elif 'VEL' == self.__feature_code:
+            return df[['ask', 'bid', 'time']].dropna().pipe(
+                lambda d: (
+                    d[['ask', 'bid']].mean(axis=1)
+                    / d['time'].diff().dt.total_seconds()
+                )
+            )
+        else:
+            return self.__lrf.series(df_rate=df).dropna()
 
     @staticmethod
     def _granularity2str(granularity='S5'):

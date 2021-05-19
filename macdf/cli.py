@@ -35,7 +35,7 @@ Options:
     --scanned-transaction-count=<int>
                             Set the transaction count to scan [default: 0]
     --feature-type=<str>    Set the feature type [default: MID]
-                            { MID, LR, LRV, LRA }
+                            { MID, VEL, LR, LRV, LRA }
     --unit-margin=<ratio>   Set the unit margin ratio to NAV [default: 0.01]
     --preserved-margin=<ratio>
                             Set the preserved margin ratio [default: 0.01]
