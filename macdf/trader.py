@@ -234,10 +234,15 @@ class OandaTraderCore(object):
             self.__logger.info(f'Open a order:\t{act}')
             self._place_order(
                 order={
-                    'type': 'MARKET', 'instrument': instrument, 'units': units,
-                    'timeInForce': 'FOK', 'positionFill': 'DEFAULT', **limits
+                    'type': 'MARKET', 'instrument': instrument,
+                    'units': str(units), 'timeInForce': 'FOK',
+                    'positionFill': 'DEFAULT', **limits
                 }
             )
+            self._refresh_txn_list()
+            return units
+        else:
+            return 0
 
     def _design_order_limits(self, instrument, side):
         ie = self.__inst_dict[instrument]
@@ -304,7 +309,7 @@ class OandaTraderCore(object):
             ]
         )
         self.__logger.debug(f'bet_size:\t{bet_size}')
-        return str(
+        return (
             int(min(bet_size, avail_size, max_size)) *
             {'long': 1, 'short': -1}[side]
         )
@@ -425,10 +430,9 @@ class AutoTrader(OandaTraderCore):
         signal.signal(signal.SIGINT, signal.SIG_DFL)
         for r in range(self.__retry + 1):
             try:
-                self.refresh_oanda_dicts()
                 for i in self.instruments:
-                    self.make_decision(instrument=i)
                     self.refresh_oanda_dicts()
+                    self.make_decision(instrument=i)
             except (V20ConnectionError, V20Timeout, APIResponseError) as e:
                 if self.__ignore_api_error or r < self.__retry:
                     self.__logger.error(e)
@@ -440,17 +444,34 @@ class AutoTrader(OandaTraderCore):
     def make_decision(self, instrument):
         df_r = self.fetch_latest_price_df(instrument=instrument)
         st = self.determine_sig_state(df_rate=df_r)
-        self.print_state_line(df_rate=df_r, add_str=st['log_str'])
-        self.design_and_place_order(instrument=instrument, act=st['act'])
-        self.write_turn_log(
+        new_units = self.design_and_place_order(
+            instrument=instrument, act=st['act']
+        )
+        if new_units != 0:
+            st['state'] = st['state'].replace(
+                '-> ',
+                '-> {:.1f}% '.format(
+                    round(
+                        abs(
+                            new_units * self.unit_costs[instrument] * 100
+                            / self.balance
+                        ),
+                        1
+                    )
+                )
+            )
+        self.print_state_line(
             df_rate=df_r,
-            **{k: v for k, v in st.items() if not k.endswith('log_str')}
+            add_str=(st['log_str'] + '{:^27}|'.format(st['state']))
+        )
+        self.write_turn_log(
+            df_rate=df_r, **{k: v for k, v in st.items() if k != 'log_str'}
         )
 
     def determine_sig_state(self, df_rate):
         i = df_rate['instrument'].iloc[-1]
         pos = self.pos_dict.get(i)
-        pos_pct = (
+        pos_pct = '{:.1f}%'.format(
             round(
                 abs(pos['units'] * self.unit_costs[i] * 100 / self.balance), 1
             ) if pos else 0
@@ -466,37 +487,37 @@ class AutoTrader(OandaTraderCore):
         if not self.price_dict[i]['tradeable']:
             act = None
             state = 'TRADING HALTED'
-        elif pos and sig['sig_act'] == 'closing':
+        elif pos and sig['act'] == 'closing':
             act = 'closing'
-            state = 'CLOSING'
+            state = '{0} {1} CLOSING'.format(pos_pct, pos['side'].upper())
         elif int(self.balance) == 0:
             act = None
             state = 'NO FUND'
         elif (pos
-              and ((sig['sig_act'] and sig['sig_act'] == pos['side'])
-                   or not sig['sig_act'])):
+              and ((sig['act'] and sig['act'] == pos['side'])
+                   or not sig['act'])):
             act = None
-            state = '{0:.1f}% {1}'.format(pos_pct, pos['side'].upper())
+            state = '{0} {1}'.format(pos_pct, pos['side'].upper())
         elif self._is_margin_lack(instrument=i):
             act = None
             state = 'LACK OF FUNDS'
         elif self._is_over_spread(df_rate=df_rate):
             act = None
             state = 'OVER-SPREAD'
-        elif not sig['sig_act']:
+        elif not sig['act']:
             act = None
             state = '-'
         elif pos:
-            act = sig['sig_act']
-            state = '{0} -> {1}'.format(
-                pos['side'].upper(), sig['sig_act'].upper()
+            act = sig['act']
+            state = '{0} {1} -> {2}'.format(
+                pos_pct, pos['side'].upper(), sig['act'].upper()
             )
         else:
-            act = sig['sig_act']
-            state = '-> {}'.format(sig['sig_act'].upper())
+            act = sig['act']
+            state = '-> {}'.format(sig['act'].upper())
         return {
             'act': act, 'state': state,
-            'log_str': (sig['sig_log_str'] + f'{state:^18}|'), **sig
+            **{('sig_act' if k == 'act' else k): v for k, v in sig.items()}
         }
 
     def _is_margin_lack(self, instrument):

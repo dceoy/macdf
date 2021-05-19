@@ -20,7 +20,7 @@ class MacdSignalDetector(object):
             fast_ema_span=fast_ema_span, slow_ema_span=slow_ema_span,
             macd_ema_span=macd_ema_span
         )
-        self.__ema_span = macd_ema_span
+        self.__window = macd_ema_span
         self.__fs_method = feature_sieve_method
         if feature_type in {'MID', 'VEL'}:
             self.__lrf = None
@@ -57,20 +57,20 @@ class MacdSignalDetector(object):
         df_macd = feature_dict[granularity]
         macd = df_macd['macd'].iloc[-1]
         macd_ema = df_macd['macd_ema'].iloc[-1]
-        volume_score = history_dict[granularity].pipe(
-            lambda d:
-            np.reciprocal((np.log(d['ask']) - np.log(d['bid'])) * d['volume'])
-        ).dropna().ewm(span=self.__ema_span).mean().iloc[-1]
-        hv_score = history_dict[granularity].pipe(
-            lambda d: np.log(
-                d[['ask', 'bid']].dropna().mean(axis=1)
-            ).diff().rolling(window=self.__ema_span).std(ddof=0)
-        ).ewm(span=self.__ema_span).mean().iloc[-1]
-        if (macd > macd_ema
-                and (macd > 0 or (volume_score > 0 and hv_score > 0))):
+        is_volatile = (
+            history_dict[granularity].assign(
+                hv=lambda d: np.log(
+                    d[['ask', 'bid']].mean(axis=1, skipna=True)
+                ).diff().rolling(
+                    window=self.__window
+                ).std(ddof=0, skipna=True)
+            )[['hv', 'volume']].ewm(
+                span=self.__window, adjust=False
+            ).mean().tail(self.__window).diff().sum(skipna=True) > 0
+        ).all()
+        if (macd > macd_ema and (macd > 0 or is_volatile)):
             sig_act = 'long'
-        elif (macd < macd_ema
-              and (macd < 0 or (volume_score > 0 and hv_score > 0))):
+        elif (macd < macd_ema and (macd < 0 or is_volatile)):
             sig_act = 'short'
         elif ((position_side == 'long' and macd < macd_ema)
               or (position_side == 'short' and macd > macd_ema)):
@@ -78,9 +78,9 @@ class MacdSignalDetector(object):
         else:
             sig_act = None
         return {
-            'sig_act': sig_act, 'granularity': granularity,
-            'sig_log_str': '{:^53}|'.format(
-                '{0} {1} MACD/EMA DIFF:{2:>9}{3:>18}'.format(
+            'act': sig_act, 'granularity': granularity,
+            'log_str': '{:^48}|'.format(
+                '{0} {1} MACD-EMA:{2:>9}{3:>18}'.format(
                     self._granularity2str(granularity=granularity),
                     self.__feature_code, '{:.1g}'.format(macd - macd_ema),
                     np.array2string(
