@@ -423,7 +423,7 @@ class AutoTrader(OandaTraderCore):
             slow_ema_span=int(slow_ema_span),
             macd_ema_span=int(macd_ema_span)
         )
-        self.__cached_span = min(int(slow_ema_span) * 10, 5000)
+        self.__cache_length = min(int(slow_ema_span) * 10, 5000)
         self.__logger.debug('vars(self):\t' + pformat(vars(self)))
 
     def invoke(self):
@@ -479,7 +479,7 @@ class AutoTrader(OandaTraderCore):
         sig = self.__signal_detector.detect(
             history_dict={
                 g: self.fetch_candle_df(
-                    instrument=i, granularity=g, count=self.__cached_span
+                    instrument=i, granularity=g, count=self.__cache_length
                 )[['ask', 'bid', 'volume']] for g in self.__granularities
             },
             position_side=(pos['side'] if pos else None)
@@ -489,7 +489,7 @@ class AutoTrader(OandaTraderCore):
             state = 'TRADING HALTED'
         elif pos and sig['act'] == 'closing':
             act = 'closing'
-            state = '{0} {1} CLOSING'.format(pos_pct, pos['side'].upper())
+            state = '{0} {1} ->'.format(pos_pct, pos['side'].upper())
         elif int(self.balance) == 0:
             act = None
             state = 'NO FUND'

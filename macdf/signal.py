@@ -33,8 +33,9 @@ class MacdSignalDetector(object):
 
     def detect(self, history_dict, position_side=None):
         feature_dict = {
-            g: self.__macdc.calculate(values=self._to_feature(df=d))
-            for g, d in history_dict.items()
+            g: self.__macdc.calculate(values=self._to_feature(df=d)).tail(
+                max(self.__macdc.slow_ema_span, self.__macdc.macd_ema_span)
+            ) for g, d in history_dict.items()
         }
         if len(feature_dict) == 1:
             granularity = list(feature_dict.keys())[0]
@@ -54,9 +55,10 @@ class MacdSignalDetector(object):
             self.__logger.debug('p-value:\t{}'.format(best_g['pvalue']))
         else:
             raise ValueError(f'invalid method:\t{self.__fs_method}')
-        df_macd = feature_dict[granularity]
-        macd = df_macd['macd'].iloc[-1]
-        macd_ema = df_macd['macd_ema'].iloc[-1]
+        macd = feature_dict[granularity]['macd'].iloc[-1]
+        macd_ema = feature_dict[granularity]['macd_ema'].iloc[-1]
+        last_macd = feature_dict[granularity]['macd'].iloc[-2]
+        last_macd_ema = feature_dict[granularity]['macd_ema'].iloc[-2]
         is_volatile = (
             history_dict[granularity].assign(
                 hv=lambda d: np.log(
@@ -68,12 +70,16 @@ class MacdSignalDetector(object):
                 span=self.__window, adjust=False
             ).mean().tail(self.__window).diff().sum(skipna=True) > 0
         ).all()
-        if (macd > macd_ema and (macd > 0 or is_volatile)):
+        if (macd > macd_ema and last_macd > last_macd_ema
+                and (macd > 0 or is_volatile)):
             sig_act = 'long'
-        elif (macd < macd_ema and (macd < 0 or is_volatile)):
+        elif (macd < macd_ema and last_macd < last_macd_ema
+              and (macd < 0 or is_volatile)):
             sig_act = 'short'
-        elif ((position_side == 'long' and macd < macd_ema)
-              or (position_side == 'short' and macd > macd_ema)):
+        elif ((position_side == 'long'
+               and macd < macd_ema and last_macd < last_macd_ema)
+              or (position_side == 'short'
+                  and macd > macd_ema and last_macd > last_macd_ema)):
             sig_act = 'closing'
         else:
             sig_act = None
