@@ -7,6 +7,8 @@ Usage:
     macdf --version
     macdf close [--debug|--info] [--oanda-account=<id>] [--oanda-token=<str>]
         [--oanda-env=<str>] [<instrument>...]
+    macdf spread [--debug|--info] [--oanda-account=<id>] [--oanda-token=<str>]
+        [--oanda-env=<str>] [--csv=<path>] [--quiet] [<instrument>...]
     macdf trade [--debug|--info] [--oanda-account=<id>] [--oanda-token=<str>]
         [--oanda-env=<str>] [--quiet] [--dry-run] [--granularity=<str>]
         [--betting-system=<str>] [--scanned-transaction-count=<int>]
@@ -24,6 +26,7 @@ Options:
     --oanda-token=<str>     Set an Oanda API token [$OANDA_TOKEN]
     --oanda-env=<str>       Set an Oanda trading environment [default: trade]
                             { trade, practice }
+    --csv=<path>            Write data with CSV into a file
     --quiet                 Suppress messages
     --dry-run               Invoke a trader with dry-run mode
     --granularity=<str>     Set the granularity [default: D]
@@ -52,6 +55,7 @@ Options:
 
 Commands:
     close                   Close positions (if not <instrument>, close all)
+    spread                  Print the ratios of spread to price
     trade                   Trade currencies
 
 Arguments:
@@ -63,6 +67,7 @@ import os
 
 import v20
 from docopt import docopt
+from oandacli.call.info import print_spread_ratios
 from oandacli.call.order import close_positions
 from oandacli.util.logger import set_log_config
 
@@ -77,14 +82,7 @@ def main():
     logger.debug(f'args:{os.linesep}{args}')
     oanda_account_id = (args['--oanda-account'] or os.getenv('OANDA_ACCOUNT'))
     oanda_api_token = (args['--oanda-token'] or os.getenv('OANDA_TOKEN'))
-    if args.get('close'):
-        close_positions(
-            api=_create_oanda_api(
-                api_token=oanda_api_token, environment=args['--oanda-env']
-            ),
-            account_id=oanda_account_id, instruments=args['<instrument>']
-        )
-    elif args.get('trade'):
+    if args.get('trade'):
         logger.info('Autonomous trading')
         AutoTrader(
             oanda_account_id=oanda_account_id, oanda_api_token=oanda_api_token,
@@ -105,6 +103,21 @@ def main():
             macd_ema_span=float(args['--macd-ema-span']),
             log_dir_path=None, quiet=args['--quiet'], dry_run=args['--dry-run']
         ).invoke()
+    else:
+        oanda_api = _create_oanda_api(
+            api_token=oanda_api_token, environment=args['--oanda-env']
+        )
+        if args.get('close'):
+            close_positions(
+                api=oanda_api, account_id=oanda_account_id,
+                instruments=args['<instrument>']
+            )
+        elif args.get('spread'):
+            print_spread_ratios(
+                api=oanda_api, account_id=oanda_account_id,
+                instruments=args['<instrument>'], csv_path=args['--csv'],
+                quiet=args['--quiet']
+            )
 
 
 def _create_oanda_api(api_token, environment='trade', stream=False, **kwargs):
