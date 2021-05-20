@@ -40,46 +40,25 @@ class MacdSignalDetector(object):
         if len(feature_dict) == 1:
             granularity = list(feature_dict.keys())[0]
         elif self.__fs_method == 'Ljung-Box':
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore', FutureWarning)
-                df_g = pd.DataFrame([
-                    {
-                        'granularity': g,
-                        'pvalue': sm.stats.diagnostic.acorr_ljungbox(
-                            x=(d['macd'] - d['macd_ema'])
-                        )[1][0]
-                    } for g, d in feature_dict.items()
-                ])
-            best_g = df_g.pipe(lambda d: d.iloc[d['pvalue'].idxmin()])
-            granularity = best_g['granularity']
-            self.__logger.debug('p-value:\t{}'.format(best_g['pvalue']))
+            granularity, pvalue = self._select_best_granularity(
+                feature_dict=feature_dict
+            )
+            self.__logger.debug(f'p-value:\t{pvalue}')
         else:
             raise ValueError(f'invalid method:\t{self.__fs_method}')
         macd = feature_dict[granularity]['macd'].iloc[-1]
         macd_ema = feature_dict[granularity]['macd_ema'].iloc[-1]
         last_macd = feature_dict[granularity]['macd'].iloc[-2]
         last_macd_ema = feature_dict[granularity]['macd_ema'].iloc[-2]
-        is_volatile = (
-            history_dict[granularity].assign(
-                hv=lambda d: np.log(
-                    d[['ask', 'bid']].mean(axis=1, skipna=True)
-                ).diff().rolling(
-                    window=self.__window
-                ).std(ddof=0, skipna=True)
-            )[['hv', 'volume']].ewm(
-                span=self.__window, adjust=False
-            ).mean().tail(self.__window).diff().sum(skipna=True) > 0
-        ).all()
+        is_volatile = self._check_volume_and_hv(df=history_dict[granularity])
         if (macd > macd_ema and last_macd > last_macd_ema
                 and (macd > 0 or is_volatile)):
             sig_act = 'long'
         elif (macd < macd_ema and last_macd < last_macd_ema
               and (macd < 0 or is_volatile)):
             sig_act = 'short'
-        elif ((position_side == 'long'
-               and macd < macd_ema and last_macd < last_macd_ema)
-              or (position_side == 'short'
-                  and macd > macd_ema and last_macd > last_macd_ema)):
+        elif ((position_side == 'long' and macd < macd_ema)
+              or (position_side == 'short' and macd > macd_ema)):
             sig_act = 'closing'
         else:
             sig_act = None
@@ -96,6 +75,30 @@ class MacdSignalDetector(object):
                 )
             )
         }
+
+    def _check_volume_and_hv(self, df):
+        return df.assign(
+            hv=lambda d: np.log(
+                d[['ask', 'bid']].mean(axis=1, skipna=True)
+            ).diff().rolling(window=self.__window).std(ddof=0, skipna=True)
+        )[['volume', 'hv']].ewm(
+            span=self.__window, adjust=False
+        ).mean().tail(self.__window).diff().sum(skipna=True).gt(0).all()
+
+    @staticmethod
+    def _select_best_granularity(feature_dict):
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', FutureWarning)
+            df_g = pd.DataFrame([
+                {
+                    'granularity': g,
+                    'pvalue': sm.stats.diagnostic.acorr_ljungbox(
+                        x=(d['macd'] - d['macd_ema'])
+                    )[1][0]
+                } for g, d in feature_dict.items()
+            ])
+        best_g = df_g.pipe(lambda d: d.iloc[d['pvalue'].idxmin()])
+        return best_g['granularity'], best_g['pvalue']
 
     def _to_feature(self, df):
         if 'MID' == self.__feature_code:
