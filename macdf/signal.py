@@ -51,15 +51,20 @@ class MacdSignalDetector(object):
         last_macd = feature_dict[granularity]['macd'].iloc[-2]
         last_macd_ema = feature_dict[granularity]['macd_ema'].iloc[-2]
         is_volatile = self._check_volume_and_hv(df=history_dict[granularity])
-        if (macd > macd_ema and last_macd > last_macd_ema
-                and (macd > 0 or is_volatile)):
-            sig_act = 'long'
-        elif (macd < macd_ema and last_macd < last_macd_ema
-              and (macd < 0 or is_volatile)):
-            sig_act = 'short'
-        elif ((position_side == 'long' and macd < macd_ema)
-              or (position_side == 'short' and macd > macd_ema)):
-            sig_act = 'closing'
+        if macd > macd_ema and last_macd > last_macd_ema:
+            if is_volatile or (macd > 0 and macd_ema < 0):
+                sig_act = 'long'
+            elif position_side == 'short':
+                sig_act = 'closing'
+            else:
+                sig_act = None
+        elif macd < macd_ema and last_macd < last_macd_ema:
+            if is_volatile or (macd < 0 and macd_ema > 0):
+                sig_act = 'short'
+            elif position_side == 'long':
+                sig_act = 'closing'
+            else:
+                sig_act = None
         else:
             sig_act = None
         return {
