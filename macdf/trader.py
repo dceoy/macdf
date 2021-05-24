@@ -4,8 +4,6 @@ import json
 import logging
 import os
 import signal
-import time
-from datetime import datetime
 from math import ceil
 from pathlib import Path
 from pprint import pformat
@@ -122,17 +120,11 @@ class OandaTraderCore(object):
                 )
             elif self.__order_log_path:
                 self._write_data(res.raw_body, path=self.__order_log_path)
-            else:
-                time.sleep(0.5)
 
     def refresh_oanda_dicts(self):
-        t0 = datetime.now()
         self._refresh_account_dicts()
-        self._sleep(last=t0, sec=0.5)
         self._refresh_txn_list()
-        self._sleep(last=t0, sec=1)
         self._refresh_inst_dict()
-        self._sleep(last=t0, sec=1.5)
         self._refresh_price_dict()
         self._refresh_unit_costs()
 
@@ -313,12 +305,6 @@ class OandaTraderCore(object):
             int(min(bet_size, avail_size, max_size)) *
             {'long': 1, 'short': -1}[side]
         )
-
-    @staticmethod
-    def _sleep(last, sec=0.5):
-        rest = sec - (datetime.now() - last).total_seconds()
-        if rest > 0:
-            time.sleep(rest)
 
     def print_log(self, data):
         if self.__quiet:

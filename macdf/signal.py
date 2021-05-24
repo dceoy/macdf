@@ -50,16 +50,19 @@ class MacdSignalDetector(object):
         macd_ema = feature_dict[granularity]['macd_ema'].iloc[-1]
         last_macd = feature_dict[granularity]['macd'].iloc[-2]
         last_macd_ema = feature_dict[granularity]['macd_ema'].iloc[-2]
-        volatile = self._check_volume_and_hv(df=history_dict[granularity])
         if macd > macd_ema and last_macd > last_macd_ema:
-            if volatile or (macd > 0 and macd_ema < 0 and last_macd_ema < 0):
+            if ((macd > 0 and macd_ema < 0
+                 and last_macd > 0 and last_macd_ema < 0)
+                    or self._is_volatile(df=history_dict[granularity])):
                 sig_act = 'long'
             elif position_side == 'short':
                 sig_act = 'closing'
             else:
                 sig_act = None
         elif macd < macd_ema and last_macd < last_macd_ema:
-            if volatile or (macd < 0 and macd_ema > 0 and last_macd_ema > 0):
+            if ((macd < 0 and macd_ema > 0
+                 and last_macd < 0 and last_macd_ema > 0)
+                    or self._is_volatile(df=history_dict[granularity])):
                 sig_act = 'short'
             elif position_side == 'long':
                 sig_act = 'closing'
@@ -71,7 +74,7 @@ class MacdSignalDetector(object):
             'act': sig_act, 'granularity': granularity,
             'log_str': '{:^48}|'.format(
                 '{0} {1} MACD-EMA:{2:>9}{3:>18}'.format(
-                    self._granularity2str(granularity=granularity),
+                    self._parse_granularity(granularity=granularity),
                     self.__feature_code, '{:.1g}'.format(macd - macd_ema),
                     np.array2string(
                         np.array([macd, macd_ema]),
@@ -81,7 +84,7 @@ class MacdSignalDetector(object):
             )
         }
 
-    def _check_volume_and_hv(self, df):
+    def _is_volatile(self, df):
         return df.assign(
             hv=lambda d: np.log(
                 d[['ask', 'bid']].mean(axis=1, skipna=True)
@@ -119,7 +122,7 @@ class MacdSignalDetector(object):
             return self.__lrf.series(df_rate=df).dropna()
 
     @staticmethod
-    def _granularity2str(granularity='S5'):
+    def _parse_granularity(granularity='S5'):
         return '{0:0>2}{1:1}'.format(
             int(granularity[1:] if len(granularity) > 1 else 1),
             granularity[0]
