@@ -46,10 +46,16 @@ class MacdSignalDetector(object):
             self.__logger.debug(f'p-value:\t{pvalue}')
         else:
             raise ValueError(f'invalid method:\t{self.__fs_method}')
-        df_macd = feature_dict[granularity]
-        v_macd_diff = df_macd['macd'] - df_macd['macd_ema']
-        if v_macd_diff.tail(2).gt(0).all():
-            if (v_macd_diff.tail(self.__window).diff().sum(skipna=True) > 0
+        df_macd = feature_dict[granularity].reset_index().assign(
+            delta_sec=lambda d: d['time'].diff().dt.total_seconds(),
+            macd_diff=lambda d: d['macd'] - d['macd_ema']
+        ).assign(
+            delta_macd_diff_ema=lambda d: (
+                d['macd_diff'] / d['delta_sec']
+            ).ewm(span=self.__window, adjust=False).mean()
+        ).tail(self.__window)
+        if df_macd['macd_diff'].tail(2).gt(0).all():
+            if (df_macd['delta_macd_diff_ema'].sum(skipna=True) > 0
                     and (df_macd[['macd', 'macd_ema']].iloc[-1].prod() < 0
                          or self._is_volatile(df=history_dict[granularity]))):
                 act = 'long'
@@ -57,8 +63,8 @@ class MacdSignalDetector(object):
                 act = 'closing'
             else:
                 act = None
-        elif v_macd_diff.tail(2).lt(0).all():
-            if (v_macd_diff.tail(self.__window).diff().sum(skipna=True) < 0
+        elif df_macd['macd_diff'].tail(2).lt(0).all():
+            if (df_macd['delta_macd_diff_ema'].sum(skipna=True) < 0
                     and (df_macd[['macd', 'macd_ema']].iloc[-1].prod() < 0
                          or self._is_volatile(df=history_dict[granularity]))):
                 act = 'short'
@@ -73,7 +79,8 @@ class MacdSignalDetector(object):
             'log_str': '{:^48}|'.format(
                 '{0} {1} MACD-EMA:{2:>9}{3:>18}'.format(
                     self._parse_granularity(granularity=granularity),
-                    self.__feature_code, '{:.1g}'.format(v_macd_diff.iloc[-1]),
+                    self.__feature_code,
+                    '{:.1g}'.format(df_macd['macd_diff'].iloc[-1]),
                     np.array2string(
                         df_macd[['macd', 'macd_ema']].iloc[-1].values,
                         formatter={'float_kind': lambda f: f'{f:.1g}'}
@@ -83,11 +90,18 @@ class MacdSignalDetector(object):
         }
 
     def _is_volatile(self, df):
-        return df.assign(
-            hv=lambda d: np.log(
-                d[['ask', 'bid']].mean(axis=1, skipna=True)
-            ).diff().rolling(window=self.__window).std(ddof=0, skipna=True)
-        )[['volume', 'hv']].ewm(
+        return df.reset_index().assign(
+            delta_sec=lambda d: d['time'].diff().dt.total_seconds()
+        ).assign(
+            delta_hv=lambda d: (
+                np.log(
+                    d[['ask', 'bid']].mean(axis=1, skipna=True)
+                ).diff().rolling(
+                    window=self.__window
+                ).std(ddof=0, skipna=True) / d['delta_sec']
+            ),
+            delta_volume=lambda d: d['volume'] / d['delta_sec']
+        )[['delta_volume', 'delta_hv']].ewm(
             span=self.__window, adjust=False
         ).mean().tail(self.__window).diff().sum(skipna=True).gt(0).all()
 
