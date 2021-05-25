@@ -34,7 +34,7 @@ class MacdSignalDetector(object):
     def detect(self, history_dict, position_side=None):
         feature_dict = {
             g: self.__macdc.calculate(values=self._to_feature(df=d)).tail(
-                max(self.__macdc.slow_ema_span, self.__macdc.macd_ema_span)
+                self.__window * 2
             ) for g, d in history_dict.items()
         }
         if len(feature_dict) == 1:
@@ -46,38 +46,36 @@ class MacdSignalDetector(object):
             self.__logger.debug(f'p-value:\t{pvalue}')
         else:
             raise ValueError(f'invalid method:\t{self.__fs_method}')
-        macd = feature_dict[granularity]['macd'].iloc[-1]
-        macd_ema = feature_dict[granularity]['macd_ema'].iloc[-1]
-        last_macd = feature_dict[granularity]['macd'].iloc[-2]
-        last_macd_ema = feature_dict[granularity]['macd_ema'].iloc[-2]
-        if macd > macd_ema and last_macd > last_macd_ema:
-            if ((macd > 0 and macd_ema < 0
-                 and last_macd > 0 and last_macd_ema < 0)
-                    or self._is_volatile(df=history_dict[granularity])):
-                sig_act = 'long'
+        df_macd = feature_dict[granularity]
+        v_macd_diff = df_macd['macd'] - df_macd['macd_ema']
+        if v_macd_diff.tail(2).gt(0).all():
+            if (v_macd_diff.tail(self.__window).diff().sum(skipna=True) > 0
+                    and (df_macd[['macd', 'macd_ema']].iloc[-1].prod() < 0
+                         or self._is_volatile(df=history_dict[granularity]))):
+                act = 'long'
             elif position_side == 'short':
-                sig_act = 'closing'
+                act = 'closing'
             else:
-                sig_act = None
-        elif macd < macd_ema and last_macd < last_macd_ema:
-            if ((macd < 0 and macd_ema > 0
-                 and last_macd < 0 and last_macd_ema > 0)
-                    or self._is_volatile(df=history_dict[granularity])):
-                sig_act = 'short'
+                act = None
+        elif v_macd_diff.tail(2).lt(0).all():
+            if (v_macd_diff.tail(self.__window).diff().sum(skipna=True) < 0
+                    and (df_macd[['macd', 'macd_ema']].iloc[-1].prod() < 0
+                         or self._is_volatile(df=history_dict[granularity]))):
+                act = 'short'
             elif position_side == 'long':
-                sig_act = 'closing'
+                act = 'closing'
             else:
-                sig_act = None
+                act = None
         else:
-            sig_act = None
+            act = None
         return {
-            'act': sig_act, 'granularity': granularity,
+            'act': act, 'granularity': granularity,
             'log_str': '{:^48}|'.format(
                 '{0} {1} MACD-EMA:{2:>9}{3:>18}'.format(
                     self._parse_granularity(granularity=granularity),
-                    self.__feature_code, '{:.1g}'.format(macd - macd_ema),
+                    self.__feature_code, '{:.1g}'.format(v_macd_diff.iloc[-1]),
                     np.array2string(
-                        np.array([macd, macd_ema]),
+                        df_macd[['macd', 'macd_ema']].iloc[-1].values,
                         formatter={'float_kind': lambda f: f'{f:.1g}'}
                     )
                 )
