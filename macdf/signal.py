@@ -6,7 +6,6 @@ import warnings
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-from tifft.macd import MacdCalculator
 
 from .feature import LogReturnFeature
 
@@ -16,13 +15,11 @@ class MacdSignalDetector(object):
                  slow_ema_span=26, macd_ema_span=9,
                  feature_sieve_method='Ljung-Box'):
         self.__logger = logging.getLogger(__name__)
-        self.__macdc = MacdCalculator(
-            fast_ema_span=fast_ema_span, slow_ema_span=slow_ema_span,
-            macd_ema_span=macd_ema_span
-        )
-        self.__window = macd_ema_span
+        self.fast_ema_span = fast_ema_span
+        self.slow_ema_span = slow_ema_span
+        self.macd_ema_span = macd_ema_span
         self.__fs_method = feature_sieve_method
-        if feature_type in {'MID', 'VEL'}:
+        if feature_type == 'MID':
             self.__lrf = None
             self.__feature_code = feature_type
         else:
@@ -33,9 +30,10 @@ class MacdSignalDetector(object):
 
     def detect(self, history_dict, position_side=None):
         feature_dict = {
-            g: self.__macdc.calculate(values=self._to_feature(df=d)).tail(
-                self.__window * 2
-            ) for g, d in history_dict.items()
+            g: self._calculate_adjusted_macd(
+                series=self._to_feature(df=d)
+            ).tail(self.macd_ema_span * 2)
+            for g, d in history_dict.items()
         }
         if len(feature_dict) == 1:
             granularity = list(feature_dict.keys())[0]
@@ -46,16 +44,14 @@ class MacdSignalDetector(object):
             self.__logger.debug(f'p-value:\t{pvalue}')
         else:
             raise ValueError(f'invalid method:\t{self.__fs_method}')
-        df_macd = feature_dict[granularity].reset_index().assign(
-            delta_sec=lambda d: d['time'].diff().dt.total_seconds(),
-            macd_diff=lambda d: d['macd'] - d['macd_ema']
+        df_macd = feature_dict[granularity].tail(self.macd_ema_span).assign(
+            macd_div=lambda d: d['macd'] - d['macd_ema']
         ).assign(
-            delta_macd_diff_ema=lambda d: (
-                d['macd_diff'] / d['delta_sec']
-            ).ewm(span=self.__window, adjust=False).mean()
-        ).tail(self.__window)
-        if df_macd['macd_diff'].tail(2).gt(0).all():
-            if (df_macd['delta_macd_diff_ema'].sum(skipna=True) > 0
+            macd_div_ema_diff=lambda d:
+            self._ema(series=d['macd_div'], span=self.macd_ema_span).diff()
+        ).tail(self.macd_ema_span)
+        if df_macd['macd_div'].tail(2).gt(0).all():
+            if (df_macd['macd_div_ema_diff'].sum(skipna=True) > 0
                     and (df_macd[['macd', 'macd_ema']].iloc[-1].prod() < 0
                          or self._is_volatile(df=history_dict[granularity]))):
                 act = 'long'
@@ -63,8 +59,8 @@ class MacdSignalDetector(object):
                 act = 'closing'
             else:
                 act = None
-        elif df_macd['macd_diff'].tail(2).lt(0).all():
-            if (df_macd['delta_macd_diff_ema'].sum(skipna=True) < 0
+        elif df_macd['macd_div'].tail(2).lt(0).all():
+            if (df_macd['macd_div_ema_diff'].sum(skipna=True) < 0
                     and (df_macd[['macd', 'macd_ema']].iloc[-1].prod() < 0
                          or self._is_volatile(df=history_dict[granularity]))):
                 act = 'short'
@@ -80,7 +76,7 @@ class MacdSignalDetector(object):
                 '{0} {1} MACD-EMA:{2:>9}{3:>18}'.format(
                     self._parse_granularity(granularity=granularity),
                     self.__feature_code,
-                    '{:.1g}'.format(df_macd['macd_diff'].iloc[-1]),
+                    '{:.1g}'.format(df_macd['macd_div'].iloc[-1]),
                     np.array2string(
                         df_macd[['macd', 'macd_ema']].iloc[-1].values,
                         formatter={'float_kind': lambda f: f'{f:.1g}'}
@@ -89,21 +85,44 @@ class MacdSignalDetector(object):
             )
         }
 
+    def _calculate_adjusted_macd(self, series):
+        return series.to_frame(name='value').reset_index().assign(
+            v_ff=lambda d: d['value'].fillna(method='ffill'),
+            delta_sec=lambda d: d['time'].diff().dt.total_seconds()
+        ).assign(
+            macd=lambda d: (
+                self._ema(series=d['v_ff'], span=self.fast_ema_span)
+                - self._ema(series=d['v_ff'], span=self.slow_ema_span)
+            ) / d['delta_sec'] * d['delta_sec'].mean()
+        ).drop(columns=['v_ff', 'delta_sec']).assign(
+            macd_ema=lambda d:
+            self._ema(series=d['macd'], span=self.macd_ema_span)
+        )
+
+    @staticmethod
+    def _ema(series, **kwargs):
+        return series.ewm(adjust=False, **kwargs).mean()
+
     def _is_volatile(self, df):
         return df.reset_index().assign(
             delta_sec=lambda d: d['time'].diff().dt.total_seconds()
         ).assign(
-            delta_hv=lambda d: (
-                np.log(
-                    d[['ask', 'bid']].mean(axis=1, skipna=True)
-                ).diff().rolling(
-                    window=self.__window
-                ).std(ddof=0, skipna=True) / d['delta_sec']
+            volume_delta_ema=lambda d: self._ema(
+                series=(d['volume'] / d['delta_sec']), span=self.macd_ema_span
             ),
-            delta_volume=lambda d: d['volume'] / d['delta_sec']
-        )[['delta_volume', 'delta_hv']].ewm(
-            span=self.__window, adjust=False
-        ).mean().tail(self.__window).diff().sum(skipna=True).gt(0).all()
+            hv_delta_ema=lambda d: self._ema(
+                series=(
+                    np.log(
+                        d[['ask', 'bid']].mean(axis=1, skipna=True)
+                    ).diff().rolling(
+                        window=self.macd_ema_span
+                    ).std(ddof=0, skipna=True) / d['delta_sec']
+                ),
+                span=self.macd_ema_span
+            )
+        )[['volume_delta_ema', 'hv_delta_ema']].tail(
+            self.macd_ema_span
+        ).diff().sum(skipna=True).gt(0).all()
 
     @staticmethod
     def _select_best_granularity(feature_dict):
@@ -123,13 +142,6 @@ class MacdSignalDetector(object):
     def _to_feature(self, df):
         if 'MID' == self.__feature_code:
             return df[['ask', 'bid']].dropna().mean(axis=1)
-        elif 'VEL' == self.__feature_code:
-            return df[['ask', 'bid', 'time']].dropna().pipe(
-                lambda d: (
-                    d[['ask', 'bid']].mean(axis=1)
-                    / d['time'].diff().dt.total_seconds()
-                )
-            )
         else:
             return self.__lrf.series(df_rate=df).dropna()
 
