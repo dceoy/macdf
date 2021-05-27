@@ -223,15 +223,18 @@ class OandaTraderCore(object):
             self.__logger.debug(f'limits:\t{limits}')
             units = self._design_order_units(instrument=instrument, side=act)
             self.__logger.debug(f'units:\t{units}')
-            self.__logger.info(f'Open a order:\t{act}')
-            self._place_order(
-                order={
-                    'type': 'MARKET', 'instrument': instrument,
-                    'units': str(units), 'timeInForce': 'FOK',
-                    'positionFill': 'DEFAULT', **limits
-                }
-            )
-            self._refresh_txn_list()
+            if units != 0:
+                self.__logger.info(f'Open an order:\t{act}')
+                self._place_order(
+                    order={
+                        'type': 'MARKET', 'instrument': instrument,
+                        'units': str(units), 'timeInForce': 'FOK',
+                        'positionFill': 'DEFAULT', **limits
+                    }
+                )
+                self._refresh_txn_list()
+            else:
+                self.__logger.info(f'Skip an order:\t{act}')
             return units
         else:
             return 0
@@ -446,6 +449,10 @@ class AutoTrader(OandaTraderCore):
                     )
                 )
             )
+        elif st['act'] in ['long', 'short']:
+            st['state'] = 'LACK OF FUNDS'
+        else:
+            pass
         self.print_state_line(
             df_rate=df_r,
             add_str=(st['log_str'] + '{:^27}|'.format(st['state']))
