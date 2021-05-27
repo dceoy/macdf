@@ -44,25 +44,21 @@ class MacdSignalDetector(object):
             self.__logger.debug(f'p-value:\t{pvalue}')
         else:
             raise ValueError(f'invalid method:\t{self.__fs_method}')
-        df_macd = feature_dict[granularity].tail(self.macd_ema_span).assign(
+        df_macd = feature_dict[granularity].assign(
             macd_div=lambda d: d['macd'] - d['macd_ema']
         ).assign(
             macd_div_ema_diff=lambda d:
             self._ema(series=d['macd_div'], span=self.macd_ema_span).diff()
         ).tail(self.macd_ema_span)
-        if df_macd['macd_div'].tail(2).gt(0).all():
-            if (df_macd['macd_div_ema_diff'].sum(skipna=True) > 0
-                    and (df_macd[['macd', 'macd_ema']].iloc[-1].prod() < 0
-                         or self._is_volatile(df=history_dict[granularity]))):
+        if df_macd['macd_div'].iloc[-1] > 0:
+            if df_macd['macd_div_ema_diff'].sum(skipna=True) > 0:
                 act = 'long'
             elif position_side == 'short':
                 act = 'closing'
             else:
                 act = None
-        elif df_macd['macd_div'].tail(2).lt(0).all():
-            if (df_macd['macd_div_ema_diff'].sum(skipna=True) < 0
-                    and (df_macd[['macd', 'macd_ema']].iloc[-1].prod() < 0
-                         or self._is_volatile(df=history_dict[granularity]))):
+        elif df_macd['macd_div'].iloc[-1] < 0:
+            if df_macd['macd_div_ema_diff'].sum(skipna=True) < 0:
                 act = 'short'
             elif position_side == 'long':
                 act = 'closing'
@@ -103,7 +99,7 @@ class MacdSignalDetector(object):
     def _ema(series, **kwargs):
         return series.ewm(adjust=False, **kwargs).mean()
 
-    def _is_volatile(self, df):
+    def _has_volatility_or_volume(self, df):
         return df.reset_index().assign(
             delta_sec=lambda d: d['time'].diff().dt.total_seconds()
         ).assign(
@@ -120,9 +116,9 @@ class MacdSignalDetector(object):
                 ),
                 span=self.macd_ema_span
             )
-        )[['volume_delta_ema', 'hv_delta_ema']].tail(
+        )[['volume_delta_ema', 'hv_delta_ema']].diff().tail(
             self.macd_ema_span
-        ).diff().sum(skipna=True).gt(0).all()
+        ).sum(skipna=True).gt(0).any()
 
     @staticmethod
     def _select_best_granularity(feature_dict):
