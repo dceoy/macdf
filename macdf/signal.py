@@ -51,35 +51,33 @@ class MacdSignalDetector(object):
         ).assign(
             macd_div_diff_ema=lambda d: d['macd_div_diff'].ewm(
                 span=self.macd_ema_span, adjust=False
-            ).mean(),
-            macd_div_diff_emstd=lambda d: d['macd_div_diff'].ewm(
-                span=self.macd_ema_span, adjust=False
-            ).std()
+            ).mean()
         ).iloc[-1].to_dict()
+        df_rate = history_dict[granularity]
         if sig['macd_div'] > 0:
-            if sig['macd_div_diff_ema'] > sig['macd_div_diff_emstd']:
+            if ((sig['macd_div_diff_ema'] > 0)
+                    or (self._has_high_volume(df=df_rate)
+                        and self._has_high_volatility(df=df_rate))):
                 act = 'long'
-            elif position_side == 'short':
-                act = 'closing'
-            elif (position_side == 'long'
-                  and sig['macd_div_diff_ema'] < -sig['macd_div_diff_emstd']):
+            elif ((position_side == 'long' and sig['macd_div_diff_ema'] < 0)
+                  or position_side == 'short'):
                 act = 'closing'
             else:
                 act = None
         elif sig['macd_div'] < 0:
-            if sig['macd_div_diff_ema'] < -sig['macd_div_diff_emstd']:
+            if ((sig['macd_div_diff_ema'] < 0)
+                    or (self._has_high_volume(df=df_rate)
+                        and self._has_high_volatility(df=df_rate))):
                 act = 'short'
-            elif position_side == 'long':
-                act = 'closing'
-            elif (position_side == 'short'
-                  and sig['macd_div_diff_ema'] > sig['macd_div_diff_emstd']):
+            elif ((position_side == 'short' and sig['macd_div_diff_ema'] > 0)
+                  or position_side == 'long'):
                 act = 'closing'
             else:
                 act = None
         else:
             act = None
         return {
-            'act': act, 'granularity': granularity,
+            'act': act, 'granularity': granularity, **sig,
             'log_str': '{:^48}|'.format(
                 '{0} {1} MACD-EMA:{2:>9}{3:>18}'.format(
                     self._parse_granularity(granularity=granularity),
@@ -90,8 +88,7 @@ class MacdSignalDetector(object):
                         formatter={'float_kind': lambda f: f'{f:.1g}'}
                     )
                 )
-            ),
-            **sig
+            )
         }
 
     def _calculate_adjusted_macd(self, series):
@@ -108,19 +105,19 @@ class MacdSignalDetector(object):
             d['macd'].ewm(span=self.macd_ema_span, adjust=False).mean()
         )
 
-    def _has_volatility_or_volume(self, df):
-        return df.reset_index().assign(
-            delta_sec=lambda d: d['time'].diff().dt.total_seconds()
-        ).assign(
-            volume_delta_ema=lambda d: (d['volume'] / d['delta_sec']).ewm(
-                span=self.macd_ema_span, adjust=False
-            ).mean(),
-            hv_delta_ema=lambda d: (
-                self._calculate_hv(df=df) / d['delta_sec']
-            ).ewm(span=self.macd_ema_span, adjust=False).mean()
-        )[['volume_delta_ema', 'hv_delta_ema']].diff().tail(
-            self.macd_ema_span
-        ).sum(skipna=True).gt(0).any()
+    def _has_high_volume(self, df):
+        e = (
+            df['volume'].diff()
+            / df.reset_index()['time'].diff().dt.total_seconds()
+        ).ewm(span=self.macd_ema_span, adjust=False)
+        return (e.mean().iloc[-1] > e.std().iloc[-1])
+
+    def _has_high_volatility(self, df):
+        e = (
+            self._calculate_hv(df=df).diff()
+            / df.reset_index()['time'].diff().dt.total_seconds()
+        ).ewm(span=self.macd_ema_span, adjust=False)
+        return (e.mean().iloc[-1] > e.std().iloc[-1])
 
     def _calculate_hv(self, df):
         return np.log(
