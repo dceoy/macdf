@@ -36,10 +36,12 @@ class BettingSystem(object):
         if pl.size == 0:
             return last_size or init_size or unit_size
         else:
-            won_last = (
-                None if (pl.size > 1 and pl.iloc[-1] > 0 and pl[-2:].sum() < 0)
-                else (pl.iloc[-1] > 0)
-            )
+            if pl.size > 1 and pl.iloc[-1] < 0 and pl.iloc[-1] < pl.iloc[-2]:
+                won_last = False
+            elif pl.size > 1 and pl.iloc[-1] > 0 and pl[-2:].sum() > 0:
+                won_last = True
+            else:
+                won_last = None
             self.__logger.debug(f'won_last:\t{won_last}')
             return self._calculate_size(
                 unit_size=unit_size, init_size=init_size,
