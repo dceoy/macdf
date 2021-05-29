@@ -20,7 +20,7 @@ class BettingSystem(object):
         ]
         if matched_strategy:
             self.strategy = matched_strategy[0]
-            self.__logger.info(f'Betting strategy: {self.strategy}')
+            self.__logger.info(f'betting strategy: {self.strategy}')
         else:
             raise ValueError(f'invalid strategy: {strategy}')
 

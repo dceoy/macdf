@@ -23,7 +23,7 @@ class APIResponseError(RuntimeError):
 
 class OandaTraderCore(object):
     def __init__(self, instruments, oanda_account_id, oanda_api_token,
-                 oanda_environment='trade', betting_system='constant',
+                 oanda_environment='trade', betting_strategy='constant',
                  scanned_transaction_count=0, unit_margin_ratio=0.01,
                  preserved_margin_ratio=0.01, take_profit_limit_ratio=0.01,
                  trailing_stop_limit_ratio=0.01, stop_loss_limit_ratio=0.01,
@@ -35,7 +35,7 @@ class OandaTraderCore(object):
         )
         self.__account_id = oanda_account_id
         self.instruments = instruments
-        self.__bs = BettingSystem(strategy=betting_system)
+        self.betting_system = BettingSystem(strategy=betting_strategy)
         self.__scanned_transaction_count = int(scanned_transaction_count)
         self.__unit_margin_ratio = float(unit_margin_ratio)
         self.__preserved_margin_ratio = float(preserved_margin_ratio)
@@ -294,7 +294,7 @@ class OandaTraderCore(object):
             / self.unit_costs[instrument]
         )
         self.__logger.debug(f'unit_size: {unit_size}')
-        bet_size = self.__bs.calculate_size_by_pl(
+        bet_size = self.betting_system.calculate_size_by_pl(
             unit_size=unit_size,
             inst_pl_txns=[
                 t for t in self.txn_list if (
@@ -392,10 +392,10 @@ class OandaTraderCore(object):
 
 
 class AutoTrader(OandaTraderCore):
-    def __init__(self, granularities='D', preserved_margin_ratio=0.01,
-                 max_spread_ratio=0.01, ignore_api_error=False, retry=1,
-                 fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
-                 **kwargs):
+    def __init__(self, granularities='D', granularity_scorer='Ljung-Box test',
+                 preserved_margin_ratio=0.01, max_spread_ratio=0.01,
+                 ignore_api_error=False, retry=1, fast_ema_span=12,
+                 slow_ema_span=26, macd_ema_span=9, **kwargs):
         super().__init__(**kwargs)
         self.__logger = logging.getLogger(__name__)
         self.__ignore_api_error = ignore_api_error
@@ -409,7 +409,8 @@ class AutoTrader(OandaTraderCore):
         self.__signal_detector = MacdSignalDetector(
             fast_ema_span=int(fast_ema_span),
             slow_ema_span=int(slow_ema_span),
-            macd_ema_span=int(macd_ema_span)
+            macd_ema_span=int(macd_ema_span),
+            granularity_scorer=granularity_scorer
         )
         self.__cache_length = min(int(slow_ema_span) * 10, 5000)
         self.__logger.debug('vars(self): ' + pformat(vars(self)))

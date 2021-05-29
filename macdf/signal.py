@@ -10,25 +10,25 @@ import statsmodels.api as sm
 
 class MacdSignalDetector(object):
     def __init__(self, fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
-                 granularity_selector='Ljung-Box test'):
+                 granularity_scorer='Ljung-Box test'):
         self.__logger = logging.getLogger(__name__)
         self.fast_ema_span = fast_ema_span
         self.slow_ema_span = slow_ema_span
         self.macd_ema_span = macd_ema_span
-        granularity_selectors = ['Ljung-Box test', 'Sharpe ratio']
-        matched_selector = [
-            s for s in granularity_selectors if (
-                granularity_selector.lower().replace('-', '').replace(' ', '')
+        granularity_scorers = ['Ljung-Box test', 'Sharpe ratio']
+        matched_scorer = [
+            s for s in granularity_scorers if (
+                granularity_scorer.lower().replace('-', '').replace(' ', '')
                 == s.lower().replace('-', '').replace(' ', '')
             )
         ]
-        if matched_selector:
-            self.granularity_selector = matched_selector[0]
+        if matched_scorer:
+            self.granularity_scorer = matched_scorer[0]
             self.__logger.info(
-                f'Granularity selector:\t{self.granularity_selector}'
+                f'granularity scorer:\t{self.granularity_scorer}'
             )
         else:
-            raise ValueError(f'invalid selector: {granularity_selector}')
+            raise ValueError(f'invalid scorer: {granularity_scorer}')
 
     def detect(self, history_dict, position_side=None):
         feature_dict = {
@@ -37,10 +37,7 @@ class MacdSignalDetector(object):
             ).tail(self.macd_ema_span * 2)
             for g, d in history_dict.items()
         }
-        granularity = (
-            list(feature_dict.keys())[0] if len(feature_dict) == 1
-            else self._select_best_granularity(feature_dict=feature_dict)
-        )
+        granularity = self._select_best_granularity(feature_dict=feature_dict)
         sig = feature_dict[granularity].assign(
             macd_div=lambda d: d['macd'] - d['macd_ema']
         ).assign(
@@ -125,7 +122,7 @@ class MacdSignalDetector(object):
     def _select_best_granularity(self, feature_dict):
         if len(feature_dict) == 1:
             granularity = list(feature_dict.keys())[0]
-        elif self.granularity_selector == 'Ljung-Box test':
+        elif self.granularity_scorer == 'Ljung-Box test':
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore', FutureWarning)
                 df_g = pd.DataFrame([
@@ -139,7 +136,7 @@ class MacdSignalDetector(object):
             best_g = df_g.pipe(lambda d: d.iloc[d['pvalue'].idxmin()])
             self.__logger.debug('pvalue: {}'.format(best_g['pvalue']))
             granularity = best_g['granularity']
-        elif self.granularity_selector == 'Sharpe ratio':
+        elif self.granularity_scorer == 'Sharpe ratio':
             df_g = pd.DataFrame([
                 {
                     'granularity': g,
@@ -152,7 +149,7 @@ class MacdSignalDetector(object):
             )
             granularity = best_g['granularity']
         else:
-            raise ValueError(f'invalid selector: {self.granularity_selector}')
+            raise ValueError(f'invalid scorer: {self.granularity_scorer}')
         self.__logger.debug(f'granularity: {granularity}')
         return granularity
 

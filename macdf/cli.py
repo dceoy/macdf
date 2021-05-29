@@ -11,12 +11,12 @@ Usage:
         [--oanda-env=<str>] [--csv=<path>] [--quiet] [<instrument>...]
     macdf trade [--debug|--info] [--oanda-account=<id>] [--oanda-token=<str>]
         [--oanda-env=<str>] [--quiet] [--dry-run] [--granularity=<str>]
-        [--betting-system=<str>] [--scanned-transaction-count=<int>]
-        [--unit-margin=<ratio>] [--preserved-margin=<ratio>]
-        [--take-profit-limit=<float>] [--trailing-stop-limit=<float>]
-        [--stop-loss-limit=<float>] [--max-spread=<float>]
-        [--fast-ema-span=<int>] [--slow-ema-span=<int>] [--macd-ema-span=<int>]
-        <instrument>...
+        [--granularity-scorer=<str>] [--betting-strategy=<str>]
+        [--scanned-transaction-count=<int>] [--unit-margin=<ratio>]
+        [--preserved-margin=<ratio>] [--take-profit-limit=<float>]
+        [--trailing-stop-limit=<float>] [--stop-loss-limit=<float>]
+        [--max-spread=<float>] [--fast-ema-span=<int>] [--slow-ema-span=<int>]
+        [--macd-ema-span=<int>] <instrument>...
 
 Options:
     -h, --help              Print help and exit
@@ -29,10 +29,14 @@ Options:
     --csv=<path>            Write data with CSV into a file
     --quiet                 Suppress messages
     --dry-run               Invoke a trader with dry-run mode
-    --granularity=<str>     Set the granularity [default: D]
+    --granularity=<str>     Set the granularities [default: D]
                             { S5, S10, S15, S30, M1, M2, M4, M5, M10, M15, M30,
                               H1, H2, H3, H4, H6, H8, H12, D, W, M }
-    --betting-system=<str>  Set the betting system [default: constant]
+    --granularity-scorer=<str>
+                            Set the granularity scorer [default: ljungboxtest]
+                            { ljungboxtest, sharperatio }
+    --betting-strategy=<str>
+                            Set the betting strategy [default: constant]
                             { constant, martingale, paroli, dalembert,
                               oscarsgrind }
     --scanned-transaction-count=<int>
@@ -87,7 +91,8 @@ def main():
             oanda_environment=args['--oanda-env'],
             instruments=args['<instrument>'],
             granularities=args['--granularity'].split(','),
-            betting_system=args['--betting-system'],
+            granularity_scorer=args['--granularity-scorer'],
+            betting_strategy=args['--betting-strategy'],
             scanned_transaction_count=int(args['--scanned-transaction-count']),
             unit_margin_ratio=float(args['--unit-margin']),
             preserved_margin_ratio=float(args['--preserved-margin']),
