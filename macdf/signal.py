@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 
 import logging
+import os
 import warnings
+from pprint import pformat
 
 import numpy as np
 import pandas as pd
@@ -24,11 +26,9 @@ class MacdSignalDetector(object):
         ]
         if matched_scorer:
             self.granularity_scorer = matched_scorer[0]
-            self.__logger.info(
-                f'granularity scorer:\t{self.granularity_scorer}'
-            )
         else:
             raise ValueError(f'invalid scorer: {granularity_scorer}')
+        self.__logger.debug('vars(self):' + os.linesep + pformat(vars(self)))
 
     def detect(self, history_dict, position_side=None):
         feature_dict = {
@@ -88,7 +88,7 @@ class MacdSignalDetector(object):
         return mid.to_frame(name='mid').reset_index().assign(
             mid_ff=lambda d: d['mid'].fillna(method='ffill'),
             delta_sec=lambda d: d['time'].diff().dt.total_seconds()
-        ).assign(
+        ).set_index('time').assign(
             macd=lambda d: (
                 d['mid_ff'].ewm(span=self.fast_ema_span, adjust=False).mean()
                 - d['mid_ff'].ewm(span=self.slow_ema_span, adjust=False).mean()
@@ -140,7 +140,7 @@ class MacdSignalDetector(object):
             df_g = pd.DataFrame([
                 {
                     'granularity': g,
-                    'sharpe_ratio': self._calculate_sharpe_ratio(mid=d['mid'])
+                    'sharpe_ratio': self._calculate_sharpe_ratio(df=d)
                 } for g, d in feature_dict.items()
             ])
             best_g = df_g.pipe(lambda d: d.iloc[d['sharpe_ratio'].idxmax()])
@@ -154,16 +154,16 @@ class MacdSignalDetector(object):
         return granularity
 
     @staticmethod
-    def _calculate_sharpe_ratio(mid):
-        return mid.to_frame(name='mid').reset_index().assign(
-            delta_sec=lambda d: d['time'].diff().dt.total_seconds(),
+    def _calculate_sharpe_ratio(df):
+        return df.reset_index().assign(
+            delta_sec=lambda d: d['time'].diff().dt.total_seconds()
         ).assign(
-            adjusted_return=lambda d: np.exp(
-                np.log(d['mid']).diff() / d['delta_sec']
-                * d['delta_sec'].mean()
+            adjusted_return=lambda d: (
+                (np.exp(np.log(d['mid']).diff()) - 1)
+                / d['delta_sec'] * d['delta_sec'].mean()
             )
         )['adjusted_return'].dropna().pipe(
-            lambda s: (s.mean() / s.std(ddof=1))
+            lambda s: abs(s.mean() / s.std(ddof=1))
         )
 
     @staticmethod

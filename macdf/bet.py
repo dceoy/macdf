@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 import logging
+import os
+from pprint import pformat
 
 import pandas as pd
 
@@ -20,9 +22,9 @@ class BettingSystem(object):
         ]
         if matched_strategy:
             self.strategy = matched_strategy[0]
-            self.__logger.info(f'betting strategy: {self.strategy}')
         else:
             raise ValueError(f'invalid strategy: {strategy}')
+        self.__logger.debug('vars(self):' + os.linesep + pformat(vars(self)))
 
     def calculate_size_by_pl(self, unit_size, inst_pl_txns, init_size=None):
         size_list = [

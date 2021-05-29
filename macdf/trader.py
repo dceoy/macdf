@@ -141,13 +141,16 @@ class OandaTraderCore(object):
                 'unexpected response:' + os.linesep + pformat(res.body)
             )
         if res.body.get('transactions'):
-            t_new = [t.dict() for t in res.body['transactions']]
-            self.__logger.info('transactions:' + os.linesep + pformat(t_new))
-            self.txn_list = self.txn_list + t_new
-            if not init and t_new:
+            new_txns = [t.dict() for t in res.body['transactions']]
+            self.__logger.debug(f'new_txns: {new_txns}')
+            self.txn_list = self.txn_list + new_txns
+            if not init and new_txns:
+                self.__logger.info(
+                    'new transactions:' + os.linesep + pformat(new_txns)
+                )
                 if self.__txn_log_path:
                     self._write_data(
-                        json.dumps(t_new), path=self.__txn_log_path
+                        json.dumps(new_txns), path=self.__txn_log_path
                     )
 
     def _refresh_inst_dict(self):
@@ -310,9 +313,8 @@ class OandaTraderCore(object):
         )
 
     def print_log(self, data):
-        if self.__quiet:
-            self.__logger.info(data)
-        else:
+        self.__logger.info(f'console log: {data}')
+        if not self.__quiet:
             print(data, flush=True)
 
     def print_state_line(self, df_rate, add_str):
@@ -406,14 +408,14 @@ class AutoTrader(OandaTraderCore):
         )
         self.__preserved_margin_ratio = preserved_margin_ratio
         self.__max_spread_ratio = float(max_spread_ratio)
-        self.__signal_detector = MacdSignalDetector(
+        self.signal_detector = MacdSignalDetector(
             fast_ema_span=int(fast_ema_span),
             slow_ema_span=int(slow_ema_span),
             macd_ema_span=int(macd_ema_span),
             granularity_scorer=granularity_scorer
         )
         self.__cache_length = min(int(slow_ema_span) * 10, 5000)
-        self.__logger.debug('vars(self): ' + pformat(vars(self)))
+        self.__logger.debug('vars(self):' + os.linesep + pformat(vars(self)))
 
     def invoke(self):
         signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -469,7 +471,7 @@ class AutoTrader(OandaTraderCore):
                 abs(pos['units'] * self.unit_costs[i] * 100 / self.balance), 1
             ) if pos else 0
         )
-        sig = self.__signal_detector.detect(
+        sig = self.signal_detector.detect(
             history_dict={
                 g: self.fetch_candle_df(
                     instrument=i, granularity=g, count=self.__cache_length
