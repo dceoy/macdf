@@ -12,11 +12,11 @@ Usage:
     macdf trade [--debug|--info] [--oanda-account=<id>] [--oanda-token=<str>]
         [--oanda-env=<str>] [--quiet] [--dry-run] [--granularity=<str>]
         [--betting-system=<str>] [--scanned-transaction-count=<int>]
-        [--feature-type=<str>] [--unit-margin=<ratio>]
-        [--preserved-margin=<ratio>] [--take-profit-limit=<float>]
-        [--trailing-stop-limit=<float>] [--stop-loss-limit=<float>]
-        [--max-spread=<float>] [--fast-ema-span=<int>] [--slow-ema-span=<int>]
-        [--macd-ema-span=<int>] <instrument>...
+        [--unit-margin=<ratio>] [--preserved-margin=<ratio>]
+        [--take-profit-limit=<float>] [--trailing-stop-limit=<float>]
+        [--stop-loss-limit=<float>] [--max-spread=<float>]
+        [--fast-ema-span=<int>] [--slow-ema-span=<int>] [--macd-ema-span=<int>]
+        <instrument>...
 
 Options:
     -h, --help              Print help and exit
@@ -37,8 +37,6 @@ Options:
                               oscarsgrind }
     --scanned-transaction-count=<int>
                             Set the transaction count to scan [default: 0]
-    --feature-type=<str>    Set the feature type [default: MID]
-                            { MID, VEL, LR, LRV, LRA }
     --unit-margin=<ratio>   Set the unit margin ratio to NAV [default: 0.01]
     --preserved-margin=<ratio>
                             Set the preserved margin ratio [default: 0.01]
@@ -91,7 +89,6 @@ def main():
             granularities=args['--granularity'].split(','),
             betting_system=args['--betting-system'],
             scanned_transaction_count=int(args['--scanned-transaction-count']),
-            feature_type=args['--feature-type'],
             unit_margin_ratio=float(args['--unit-margin']),
             preserved_margin_ratio=float(args['--preserved-margin']),
             take_profit_limit_ratio=float(args['--take-profit-limit']),

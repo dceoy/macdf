@@ -12,24 +12,24 @@ class BettingSystem(object):
             'Martingale', 'Paroli', "d'Alembert", 'Pyramid', "Oscar's grind",
             'Constant'
         ]
-        matched_st = [
+        matched_strategy = [
             s for s in strategies if (
                 strategy.lower().replace("'", '').replace(' ', '')
                 == s.lower().replace("'", '').replace(' ', '')
             )
         ]
-        if matched_st:
-            self.strategy = matched_st[0]
-            self.__logger.info(f'Betting strategy:\t{self.strategy}')
+        if matched_strategy:
+            self.strategy = matched_strategy[0]
+            self.__logger.info(f'Betting strategy: {self.strategy}')
         else:
-            raise ValueError('invalid strategy name')
+            raise ValueError(f'invalid strategy: {strategy}')
 
     def calculate_size_by_pl(self, unit_size, inst_pl_txns, init_size=None):
         size_list = [
             float(t['units']) for t in inst_pl_txns if float(t['units']) != 0
         ]
         last_size = abs(int(size_list[-1] if size_list else 0))
-        self.__logger.debug(f'last_size:\t{last_size}')
+        self.__logger.debug(f'last_size: {last_size}')
         pl = pd.Series([
             t['pl'] for t in inst_pl_txns
         ]).astype(float).pipe(lambda a: a[a != 0])
@@ -42,7 +42,7 @@ class BettingSystem(object):
                 won_last = True
             else:
                 won_last = None
-            self.__logger.debug(f'won_last:\t{won_last}')
+            self.__logger.debug(f'won_last: {won_last}')
             return self._calculate_size(
                 unit_size=unit_size, init_size=init_size,
                 last_size=last_size, won_last=won_last,
@@ -67,7 +67,7 @@ class BettingSystem(object):
             else:
                 return (last_size - unit_size)
         elif self.strategy == "Oscar's grind":
-            self.__logger.debug(f'all_time_high:\t{all_time_high}')
+            self.__logger.debug(f'all_time_high: {all_time_high}')
             if all_time_high:
                 return init_size or unit_size
             elif won_last:
@@ -77,4 +77,4 @@ class BettingSystem(object):
         elif self.strategy == 'Constant':
             return unit_size
         else:
-            raise ValueError('invalid strategy name')
+            raise ValueError(f'invalid strategy: {self.strategy}')
