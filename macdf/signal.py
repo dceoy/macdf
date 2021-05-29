@@ -7,43 +7,40 @@ import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 
-from .feature import LogReturnFeature
-
 
 class MacdSignalDetector(object):
-    def __init__(self, feature_type='MID', drop_zero=False, fast_ema_span=12,
-                 slow_ema_span=26, macd_ema_span=9,
-                 feature_sieve_method='Ljung-Box'):
+    def __init__(self, fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
+                 granularity_selector='Ljung-Box test'):
         self.__logger = logging.getLogger(__name__)
         self.fast_ema_span = fast_ema_span
         self.slow_ema_span = slow_ema_span
         self.macd_ema_span = macd_ema_span
-        self.__fs_method = feature_sieve_method
-        if feature_type == 'MID':
-            self.__lrf = None
-            self.__feature_code = feature_type
-        else:
-            self.__lrf = LogReturnFeature(
-                type=feature_type, drop_zero=drop_zero
+        granularity_selectors = ['Ljung-Box test', 'Sharpe ratio']
+        matched_selector = [
+            s for s in granularity_selectors if (
+                granularity_selector.lower().replace('-', '').replace(' ', '')
+                == s.lower().replace('-', '').replace(' ', '')
             )
-            self.__feature_code = self.__lrf.code
+        ]
+        if matched_selector:
+            self.granularity_selector = matched_selector[0]
+            self.__logger.info(
+                f'Granularity selector:\t{self.granularity_selector}'
+            )
+        else:
+            raise ValueError(f'invalid selector: {granularity_selector}')
 
     def detect(self, history_dict, position_side=None):
         feature_dict = {
             g: self._calculate_adjusted_macd(
-                series=self._to_feature(df=d)
+                mid=d[['ask', 'bid']].dropna().mean(axis=1)
             ).tail(self.macd_ema_span * 2)
             for g, d in history_dict.items()
         }
-        if len(feature_dict) == 1:
-            granularity = list(feature_dict.keys())[0]
-        elif self.__fs_method == 'Ljung-Box':
-            granularity, pvalue = self._select_best_granularity(
-                feature_dict=feature_dict
-            )
-            self.__logger.debug(f'p-value:\t{pvalue}')
-        else:
-            raise ValueError(f'invalid method:\t{self.__fs_method}')
+        granularity = (
+            list(feature_dict.keys())[0] if len(feature_dict) == 1
+            else self._select_best_granularity(feature_dict=feature_dict)
+        )
         sig = feature_dict[granularity].assign(
             macd_div=lambda d: d['macd'] - d['macd_ema']
         ).assign(
@@ -78,10 +75,9 @@ class MacdSignalDetector(object):
             act = None
         return {
             'act': act, 'granularity': granularity, **sig,
-            'log_str': '{:^48}|'.format(
-                '{0} {1} MACD-EMA:{2:>9}{3:>18}'.format(
+            'log_str': '{:^44}|'.format(
+                '{0} MACD-EMA:{1:>9}{2:>18}'.format(
                     self._parse_granularity(granularity=granularity),
-                    self.__feature_code,
                     '{:.1g}'.format(sig['macd_div']),
                     np.array2string(
                         np.array([sig['macd'], sig['macd_ema']]),
@@ -91,16 +87,16 @@ class MacdSignalDetector(object):
             )
         }
 
-    def _calculate_adjusted_macd(self, series):
-        return series.to_frame(name='value').reset_index().assign(
-            v_ff=lambda d: d['value'].fillna(method='ffill'),
+    def _calculate_adjusted_macd(self, mid):
+        return mid.to_frame(name='mid').reset_index().assign(
+            mid_ff=lambda d: d['value'].fillna(method='ffill'),
             delta_sec=lambda d: d['time'].diff().dt.total_seconds()
         ).assign(
             macd=lambda d: (
-                d['v_ff'].ewm(span=self.fast_ema_span, adjust=False).mean()
-                - d['v_ff'].ewm(span=self.slow_ema_span, adjust=False).mean()
+                d['mid_ff'].ewm(span=self.fast_ema_span, adjust=False).mean()
+                - d['mid_ff'].ewm(span=self.slow_ema_span, adjust=False).mean()
             ) / d['delta_sec'] * d['delta_sec'].mean()
-        ).drop(columns=['v_ff', 'delta_sec']).assign(
+        ).drop(columns=['mid_ff', 'delta_sec']).assign(
             macd_ema=lambda d:
             d['macd'].ewm(span=self.macd_ema_span, adjust=False).mean()
         )
@@ -126,26 +122,52 @@ class MacdSignalDetector(object):
             window=self.macd_ema_span
         ).std(ddof=0, skipna=True)
 
-    @staticmethod
-    def _select_best_granularity(feature_dict):
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore', FutureWarning)
+    def _select_best_granularity(self, feature_dict):
+        if len(feature_dict) == 1:
+            granularity = list(feature_dict.keys())[0]
+        elif self.granularity_selector == 'Ljung-Box test':
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', FutureWarning)
+                df_g = pd.DataFrame([
+                    {
+                        'granularity': g,
+                        'pvalue': sm.stats.diagnostic.acorr_ljungbox(
+                            x=(d['macd'] - d['macd_ema'])
+                        )[1][0]
+                    } for g, d in feature_dict.items()
+                ])
+            best_g = df_g.pipe(lambda d: d.iloc[d['pvalue'].idxmin()])
+            self.__logger.debug('pvalue: {}'.format(best_g['pvalue']))
+            granularity = best_g['granularity']
+        elif self.granularity_selector == 'Sharpe ratio':
             df_g = pd.DataFrame([
                 {
                     'granularity': g,
-                    'pvalue': sm.stats.diagnostic.acorr_ljungbox(
-                        x=(d['macd'] - d['macd_ema'])
-                    )[1][0]
+                    'sharpe_ratio': self._calculate_sharpe_ratio(mid=d['mid'])
                 } for g, d in feature_dict.items()
             ])
-        best_g = df_g.pipe(lambda d: d.iloc[d['pvalue'].idxmin()])
-        return best_g['granularity'], best_g['pvalue']
-
-    def _to_feature(self, df):
-        if 'MID' == self.__feature_code:
-            return df[['ask', 'bid']].dropna().mean(axis=1)
+            best_g = df_g.pipe(lambda d: d.iloc[d['sharpe_ratio'].idxmax()])
+            self.__logger.debug(
+                'sharpe_ratio: {}'.format(best_g['sharpe_ratio'])
+            )
+            granularity = best_g['granularity']
         else:
-            return self.__lrf.series(df_rate=df).dropna()
+            raise ValueError(f'invalid selector: {self.granularity_selector}')
+        self.__logger.debug(f'granularity: {granularity}')
+        return granularity
+
+    @staticmethod
+    def _calculate_sharpe_ratio(mid):
+        return mid.to_frame(name='mid').reset_index().assign(
+            delta_sec=lambda d: d['time'].diff().dt.total_seconds(),
+        ).assign(
+            adjusted_return=lambda d: np.exp(
+                np.log(d['mid']).diff() / d['delta_sec']
+                * d['delta_sec'].mean()
+            )
+        )['adjusted_return'].dropna().pipe(
+            lambda s: (s.mean() / s.std(ddof=1))
+        )
 
     @staticmethod
     def _parse_granularity(granularity='S5'):

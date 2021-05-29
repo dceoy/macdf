@@ -209,22 +209,22 @@ class OandaTraderCore(object):
                         self.price_dict[instrument]['ask']
                         / self.price_dict[i]['ask']
                     )
-            assert bpv, f'bp value calculatiton failed:\t{instrument}'
+            assert bpv, f'bp value calculatiton failed: {instrument}'
         return bpv
 
     def design_and_place_order(self, instrument, act):
         pos = self.pos_dict.get(instrument)
         if pos and act and (act == 'closing' or act != pos['side']):
-            self.__logger.info('Close a position:\t{}'.format(pos['side']))
+            self.__logger.info('Close a position: {}'.format(pos['side']))
             self._place_order(closing=True, instrument=instrument)
             self._refresh_txn_list()
         if act in ['long', 'short']:
             limits = self._design_order_limits(instrument=instrument, side=act)
-            self.__logger.debug(f'limits:\t{limits}')
+            self.__logger.debug(f'limits: {limits}')
             units = self._design_order_units(instrument=instrument, side=act)
-            self.__logger.debug(f'units:\t{units}')
+            self.__logger.debug(f'units: {units}')
             if units != 0:
-                self.__logger.info(f'Open an order:\t{act}')
+                self.__logger.info(f'Open an order: {act}')
                 self._place_order(
                     order={
                         'type': 'MARKET', 'instrument': instrument,
@@ -234,7 +234,7 @@ class OandaTraderCore(object):
                 )
                 self._refresh_txn_list()
             else:
-                self.__logger.info(f'Skip an order:\t{act}')
+                self.__logger.info(f'Skip an order: {act}')
             return units
         else:
             return 0
@@ -288,12 +288,12 @@ class OandaTraderCore(object):
                 ) / self.unit_costs[instrument]
             ), 0
         )
-        self.__logger.debug(f'avail_size:\t{avail_size}')
+        self.__logger.debug(f'avail_size: {avail_size}')
         unit_size = ceil(
             self.balance * self.__unit_margin_ratio
             / self.unit_costs[instrument]
         )
-        self.__logger.debug(f'unit_size:\t{unit_size}')
+        self.__logger.debug(f'unit_size: {unit_size}')
         bet_size = self.__bs.calculate_size_by_pl(
             unit_size=unit_size,
             inst_pl_txns=[
@@ -303,7 +303,7 @@ class OandaTraderCore(object):
                 )
             ]
         )
-        self.__logger.debug(f'bet_size:\t{bet_size}')
+        self.__logger.debug(f'bet_size: {bet_size}')
         return (
             int(min(bet_size, avail_size, max_size)) *
             {'long': 1, 'short': -1}[side]
@@ -345,7 +345,7 @@ class OandaTraderCore(object):
         if self.__log_dir_path and df.size:
             self.__logger.debug(f'{name} df:{os.linesep}{df}')
             p = str(Path(self.__log_dir_path).joinpath(f'{name}.tsv'))
-            self.__logger.info(f'Write TSV log:\t{p}')
+            self.__logger.info(f'Write TSV log: {p}')
             self._write_df(df=df, path=p)
 
     def _write_df(self, df, path, mode='a'):
@@ -393,9 +393,9 @@ class OandaTraderCore(object):
 
 class AutoTrader(OandaTraderCore):
     def __init__(self, granularities='D', preserved_margin_ratio=0.01,
-                 max_spread_ratio=0.01, feature_type='MID',
-                 ignore_api_error=False, retry=1, fast_ema_span=12,
-                 slow_ema_span=26, macd_ema_span=9, **kwargs):
+                 max_spread_ratio=0.01, ignore_api_error=False, retry=1,
+                 fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
+                 **kwargs):
         super().__init__(**kwargs)
         self.__logger = logging.getLogger(__name__)
         self.__ignore_api_error = ignore_api_error
@@ -407,13 +407,12 @@ class AutoTrader(OandaTraderCore):
         self.__preserved_margin_ratio = preserved_margin_ratio
         self.__max_spread_ratio = float(max_spread_ratio)
         self.__signal_detector = MacdSignalDetector(
-            feature_type=feature_type, drop_zero=True,
             fast_ema_span=int(fast_ema_span),
             slow_ema_span=int(slow_ema_span),
             macd_ema_span=int(macd_ema_span)
         )
         self.__cache_length = min(int(slow_ema_span) * 10, 5000)
-        self.__logger.debug('vars(self):\t' + pformat(vars(self)))
+        self.__logger.debug('vars(self): ' + pformat(vars(self)))
 
     def invoke(self):
         signal.signal(signal.SIGINT, signal.SIG_DFL)
