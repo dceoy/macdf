@@ -140,7 +140,10 @@ class MacdSignalDetector(object):
             df_g = pd.DataFrame([
                 {
                     'granularity': g,
-                    'sharpe_ratio': self._calculate_sharpe_ratio(df=d)
+                    'sharpe_ratio': self._calculate_sharpe_ratio(
+                        df=d,
+                        is_short=(d['macd'].iloc[-1] < d['macd_ema'].iloc[-1])
+                    )
                 } for g, d in feature_dict.items()
             ])
             best_g = df_g.pipe(lambda d: d.iloc[d['sharpe_ratio'].idxmax()])
@@ -154,16 +157,16 @@ class MacdSignalDetector(object):
         return granularity
 
     @staticmethod
-    def _calculate_sharpe_ratio(df):
+    def _calculate_sharpe_ratio(df, is_short=False):
         return df.reset_index().assign(
             delta_sec=lambda d: d['time'].diff().dt.total_seconds()
         ).assign(
             adjusted_return=lambda d: (
-                (np.exp(np.log(d['mid']).diff()) - 1)
+                (np.exp(np.log(d['mid']).diff()) - 1) * (-1 if is_short else 1)
                 / d['delta_sec'] * d['delta_sec'].mean()
             )
         )['adjusted_return'].dropna().pipe(
-            lambda s: abs(s.mean() / s.std(ddof=1))
+            lambda s: (s.mean() / s.std(ddof=1))
         )
 
     @staticmethod
