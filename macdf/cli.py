@@ -37,7 +37,7 @@ Options:
                             Set the granularity scorer [default: ljungboxtest]
                             { ljungboxtest, sharperatio }
     --min-sharpe-ratio=<float>
-                            Set the min Sharpe ratio [default: 1]
+                            Set the min Sharpe ratio [default: 0]
     --betting-strategy=<str>
                             Set the betting strategy [default: constant]
                             { constant, martingale, paroli, dalembert,

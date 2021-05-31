@@ -5,14 +5,13 @@ import os
 import warnings
 from pprint import pformat
 
-import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 
 
 class MacdSignalDetector(object):
     def __init__(self, fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
-                 min_sharpe_ratio=1, granularity_scorer='Ljung-Box test'):
+                 min_sharpe_ratio=0, granularity_scorer='Ljung-Box test'):
         self.__logger = logging.getLogger(__name__)
         self.fast_ema_span = fast_ema_span
         self.slow_ema_span = slow_ema_span
@@ -34,12 +33,12 @@ class MacdSignalDetector(object):
     def detect(self, history_dict, position_side=None):
         feature_dict = {
             g: self._calculate_adjusted_return_rate(
-                df=self._calculate_adjusted_macd(df=d.fillna(method='ffill'))
+                df=self._calculate_adjusted_macd(df=d)
             ) for g, d in history_dict.items()
         }
         granularity = self._select_best_granularity(feature_dict=feature_dict)
         df_sig = feature_dict[granularity].assign(
-            macd_div_diff_ema=lambda d: (d['macd'] - d['macd_ema']).diff().ewm(
+            macd_delta_ema=lambda d: (d['macd'] - d['macd_ema']).diff().ewm(
                 span=self.macd_ema_span, adjust=False
             ).mean(),
             ewm_sharpe_ratio=lambda d: d['return_rate'].pipe(
@@ -52,39 +51,34 @@ class MacdSignalDetector(object):
         self.__logger.info(f'df_sig:{os.linesep}{df_sig}')
         sig = df_sig.iloc[-1].to_dict()
         if sig['macd'] > sig['macd_ema']:
-            macd_sign = '>'
-            if (sig['macd_div_diff_ema'] > 0
+            if (sig['macd_delta_ema'] > 0
                     and sig['ewm_sharpe_ratio'] >= self.min_sharpe_ratio):
                 act = 'long'
-            elif ((position_side == 'long' and sig['macd_div_diff_ema'] < 0)
+            elif ((position_side == 'long' and sig['macd_delta_ema'] < 0)
                   or position_side == 'short'):
                 act = 'closing'
             else:
                 act = None
         elif sig['macd'] < sig['macd_ema']:
-            macd_sign = '<'
-            if (sig['macd_div_diff_ema'] < 0
+            if (sig['macd_delta_ema'] < 0
                     and sig['ewm_sharpe_ratio'] >= self.min_sharpe_ratio):
                 act = 'short'
-            elif ((position_side == 'short' and sig['macd_div_diff_ema'] > 0)
+            elif ((position_side == 'short' and sig['macd_delta_ema'] > 0)
                   or position_side == 'long'):
                 act = 'closing'
             else:
                 act = None
         else:
-            macd_sign = '='
             act = None
         return {
             'act': act, 'granularity': granularity, **sig,
-            'log_str': '{:^49}|'.format(
-                '{0} EMSR [MACD{1}EMA]:{2:>7}{3:>18}'.format(
-                    self._parse_granularity(granularity=granularity),
-                    macd_sign, '{:.2g}'.format(sig['ewm_sharpe_ratio']),
-                    np.array2string(
-                        np.array([sig['macd'], sig['macd_ema']]),
-                        formatter={'float_kind': lambda f: f'{f:.1g}'}
-                    )
-                )
+            'log_str': '{0:^7}|{1:^41}|{2:^18}|'.format(
+                self._parse_granularity(granularity=granularity),
+                'MACD-EMA [DELTA]:{0:>9}{1:>11}'.format(
+                    '{:.1g}'.format(sig['macd'] - sig['macd_ema']),
+                    '[{:.1g}]'.format(sig['macd_delta_ema'])
+                ),
+                'EMSR:{:>9}'.format('{:.1g}'.format(sig['ewm_sharpe_ratio']))
             )
         }
 
