@@ -32,32 +32,26 @@ class MacdSignalDetector(object):
 
     def detect(self, history_dict, position_side=None):
         feature_dict = {
-            g: self._calculate_adjusted_macd(
-                mid=d[['ask', 'bid']].dropna().mean(axis=1)
-            ).tail(self.macd_ema_span * 2)
-            for g, d in history_dict.items()
+            g: self._calculate_adjusted_return_rate(
+                df=self._calculate_adjusted_macd(df=d.fillna(method='ffill'))
+            ) for g, d in history_dict.items()
         }
         granularity = self._select_best_granularity(feature_dict=feature_dict)
-        sig = feature_dict[granularity].assign(
-            macd_div=lambda d: (d['macd'] - d['macd_ema']),
-            adjusted_return=lambda d: (
-                (np.exp(np.log(d['mid']).diff()) - 1)
-                * (-1 if d['macd'].iloc[-1] < d['macd_ema'].iloc[-1] else 1)
-                / d['delta_sec'] * d['delta_sec'].mean()
-            )
-        ).assign(
-            macd_div_diff_ema=lambda d: d['macd_div'].diff().ewm(
+        df_sig = feature_dict[granularity].assign(
+            macd_div_diff_ema=lambda d: (d['macd'] - d['macd_ema']).diff().ewm(
                 span=self.macd_ema_span, adjust=False
             ).mean(),
-            ewm_sharpe_ratio=lambda d: d['adjusted_return'].pipe(
+            ewm_sharpe_ratio=lambda d: d['return_rate'].pipe(
                 lambda s: (
                     s.ewm(span=self.macd_ema_span, adjust=False).mean()
                     / s.ewm(span=self.macd_ema_span, adjust=False).std(ddof=1)
                 )
             )
-        ).iloc[-1].to_dict()
+        )
+        self.__logger.info(f'df_sig:{os.linesep}{df_sig}')
+        sig = df_sig.iloc[-1].to_dict()
         if sig['macd'] > sig['macd_ema']:
-            if sig['macd_div_diff_ema'] > 0 and sig['ewm_sharpe_ratio'] > 1:
+            if sig['macd_div_diff_ema'] > 0 and sig['ewm_sharpe_ratio'] > 0:
                 act = 'long'
             elif ((position_side == 'long' and sig['macd_div_diff_ema'] < 0)
                   or position_side == 'short'):
@@ -65,7 +59,7 @@ class MacdSignalDetector(object):
             else:
                 act = None
         elif sig['macd'] < sig['macd_ema']:
-            if sig['macd_div_diff_ema'] < 0 and sig['ewm_sharpe_ratio'] > 1:
+            if sig['macd_div_diff_ema'] < 0 and sig['ewm_sharpe_ratio'] > 0:
                 act = 'short'
             elif ((position_side == 'short' and sig['macd_div_diff_ema'] > 0)
                   or position_side == 'long'):
@@ -88,26 +82,19 @@ class MacdSignalDetector(object):
             )
         }
 
-    def _calculate_adjusted_macd(self, mid):
-        return mid.to_frame(name='mid').reset_index().assign(
-            mid_ff=lambda d: d['mid'].fillna(method='ffill'),
+    def _calculate_adjusted_macd(self, df):
+        return df.dropna(subset=['ask', 'bid']).reset_index().assign(
+            mid=lambda d: d[['ask', 'bid']].mean(axis=1),
             delta_sec=lambda d: d['time'].diff().dt.total_seconds()
         ).set_index('time').assign(
             macd=lambda d: (
-                d['mid_ff'].ewm(span=self.fast_ema_span, adjust=False).mean()
-                - d['mid_ff'].ewm(span=self.slow_ema_span, adjust=False).mean()
+                d['mid'].ewm(span=self.fast_ema_span, adjust=False).mean()
+                - d['mid'].ewm(span=self.slow_ema_span, adjust=False).mean()
             ) / d['delta_sec'] * d['delta_sec'].mean()
-        ).drop(columns='mid_ff').assign(
+        ).assign(
             macd_ema=lambda d:
             d['macd'].ewm(span=self.macd_ema_span, adjust=False).mean()
         )
-
-    def _calculate_hv(self, df):
-        return np.log(
-            df[['ask', 'bid']].mean(axis=1, skipna=True)
-        ).diff().rolling(
-            window=self.macd_ema_span
-        ).std(ddof=1, skipna=True)
 
     def _select_best_granularity(self, feature_dict):
         if len(feature_dict) == 1:
@@ -130,9 +117,8 @@ class MacdSignalDetector(object):
             df_g = pd.DataFrame([
                 {
                     'granularity': g,
-                    'sharpe_ratio': self._calculate_sharpe_ratio(
-                        df=d,
-                        is_short=(d['macd'].iloc[-1] < d['macd_ema'].iloc[-1])
+                    'sharpe_ratio': d['return_rate'].dropna().pipe(
+                        lambda s: s.mean() / s.std(ddof=1)
                     )
                 } for g, d in feature_dict.items()
             ])
@@ -147,16 +133,15 @@ class MacdSignalDetector(object):
         return granularity
 
     @staticmethod
-    def _calculate_sharpe_ratio(df, is_short=False):
-        return df.reset_index().assign(
-            delta_sec=lambda d: d['time'].diff().dt.total_seconds()
-        ).assign(
-            adjusted_return=lambda d: (
-                (np.exp(np.log(d['mid']).diff()) - 1) * (-1 if is_short else 1)
-                / d['delta_sec'] * d['delta_sec'].mean()
+    def _calculate_adjusted_return_rate(df):
+        return df.assign(
+            return_rate=lambda d: (
+                (
+                    (1 - d['ask'] / d['bid'].shift(1))
+                    if d['macd'].iloc[-1] < d['macd_ema'].iloc[-1] else
+                    (d['bid'] / d['ask'].shift(1) - 1)
+                ) / d['delta_sec'] * d['delta_sec'].mean()
             )
-        )['adjusted_return'].dropna().pipe(
-            lambda s: (s.mean() / s.std(ddof=1))
         )
 
     @staticmethod
