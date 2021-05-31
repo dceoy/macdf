@@ -39,29 +39,33 @@ class MacdSignalDetector(object):
         }
         granularity = self._select_best_granularity(feature_dict=feature_dict)
         sig = feature_dict[granularity].assign(
-            macd_div=lambda d: d['macd'] - d['macd_ema']
+            macd_div=lambda d: (d['macd'] - d['macd_ema']),
+            adjusted_return=lambda d: (
+                (np.exp(np.log(d['mid']).diff()) - 1)
+                * (-1 if d['macd'].iloc[-1] < d['macd_ema'].iloc[-1] else 1)
+                / d['delta_sec'] * d['delta_sec'].mean()
+            )
         ).assign(
-            macd_div_diff=lambda d: d['macd_div'].diff()
-        ).assign(
-            macd_div_diff_ema=lambda d: d['macd_div_diff'].ewm(
+            macd_div_diff_ema=lambda d: d['macd_div'].diff().ewm(
                 span=self.macd_ema_span, adjust=False
-            ).mean()
+            ).mean(),
+            ewm_sharpe_ratio=lambda d: d['adjusted_return'].pipe(
+                lambda s: (
+                    s.ewm(span=self.macd_ema_span, adjust=False).mean()
+                    / s.ewm(span=self.macd_ema_span, adjust=False).std(ddof=1)
+                )
+            )
         ).iloc[-1].to_dict()
-        df_rate = history_dict[granularity]
-        if sig['macd_div'] > 0:
-            if ((sig['macd_div_diff_ema'] > 0)
-                    or (self._has_high_volume(df=df_rate)
-                        and self._has_high_volatility(df=df_rate))):
+        if sig['macd'] > sig['macd_ema']:
+            if sig['macd_div_diff_ema'] > 0 and sig['ewm_sharpe_ratio'] > 1:
                 act = 'long'
             elif ((position_side == 'long' and sig['macd_div_diff_ema'] < 0)
                   or position_side == 'short'):
                 act = 'closing'
             else:
                 act = None
-        elif sig['macd_div'] < 0:
-            if ((sig['macd_div_diff_ema'] < 0)
-                    or (self._has_high_volume(df=df_rate)
-                        and self._has_high_volatility(df=df_rate))):
+        elif sig['macd'] < sig['macd_ema']:
+            if sig['macd_div_diff_ema'] < 0 and sig['ewm_sharpe_ratio'] > 1:
                 act = 'short'
             elif ((position_side == 'short' and sig['macd_div_diff_ema'] > 0)
                   or position_side == 'long'):
@@ -72,10 +76,10 @@ class MacdSignalDetector(object):
             act = None
         return {
             'act': act, 'granularity': granularity, **sig,
-            'log_str': '{:^44}|'.format(
-                '{0} MACD-EMA:{1:>9}{2:>18}'.format(
+            'log_str': '{:^51}|'.format(
+                '{0} EMSR [MACD/EMA]:{1:>9}{2:>18}'.format(
                     self._parse_granularity(granularity=granularity),
-                    '{:.1g}'.format(sig['macd_div']),
+                    '{:.1g}'.format(sig['ewm_sharpe_ratio']),
                     np.array2string(
                         np.array([sig['macd'], sig['macd_ema']]),
                         formatter={'float_kind': lambda f: f'{f:.1g}'}
@@ -93,31 +97,17 @@ class MacdSignalDetector(object):
                 d['mid_ff'].ewm(span=self.fast_ema_span, adjust=False).mean()
                 - d['mid_ff'].ewm(span=self.slow_ema_span, adjust=False).mean()
             ) / d['delta_sec'] * d['delta_sec'].mean()
-        ).drop(columns=['mid_ff', 'delta_sec']).assign(
+        ).drop(columns='mid_ff').assign(
             macd_ema=lambda d:
             d['macd'].ewm(span=self.macd_ema_span, adjust=False).mean()
         )
-
-    def _has_high_volume(self, df):
-        e = (
-            df['volume'].diff()
-            / df.reset_index()['time'].diff().dt.total_seconds()
-        ).ewm(span=self.macd_ema_span, adjust=False)
-        return (e.mean().iloc[-1] > e.std().iloc[-1])
-
-    def _has_high_volatility(self, df):
-        e = (
-            self._calculate_hv(df=df).diff()
-            / df.reset_index()['time'].diff().dt.total_seconds()
-        ).ewm(span=self.macd_ema_span, adjust=False)
-        return (e.mean().iloc[-1] > e.std().iloc[-1])
 
     def _calculate_hv(self, df):
         return np.log(
             df[['ask', 'bid']].mean(axis=1, skipna=True)
         ).diff().rolling(
             window=self.macd_ema_span
-        ).std(ddof=0, skipna=True)
+        ).std(ddof=1, skipna=True)
 
     def _select_best_granularity(self, feature_dict):
         if len(feature_dict) == 1:
