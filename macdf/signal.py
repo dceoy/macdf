@@ -12,11 +12,12 @@ import statsmodels.api as sm
 
 class MacdSignalDetector(object):
     def __init__(self, fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
-                 granularity_scorer='Ljung-Box test'):
+                 min_sharpe_ratio=1, granularity_scorer='Ljung-Box test'):
         self.__logger = logging.getLogger(__name__)
         self.fast_ema_span = fast_ema_span
         self.slow_ema_span = slow_ema_span
         self.macd_ema_span = macd_ema_span
+        self.min_sharpe_ratio = min_sharpe_ratio
         granularity_scorers = ['Ljung-Box test', 'Sharpe ratio']
         matched_scorer = [
             s for s in granularity_scorers if (
@@ -51,7 +52,9 @@ class MacdSignalDetector(object):
         self.__logger.info(f'df_sig:{os.linesep}{df_sig}')
         sig = df_sig.iloc[-1].to_dict()
         if sig['macd'] > sig['macd_ema']:
-            if sig['macd_div_diff_ema'] > 0 and sig['ewm_sharpe_ratio'] > 0:
+            macd_sign = '>'
+            if (sig['macd_div_diff_ema'] > 0
+                    and sig['ewm_sharpe_ratio'] >= self.min_sharpe_ratio):
                 act = 'long'
             elif ((position_side == 'long' and sig['macd_div_diff_ema'] < 0)
                   or position_side == 'short'):
@@ -59,7 +62,9 @@ class MacdSignalDetector(object):
             else:
                 act = None
         elif sig['macd'] < sig['macd_ema']:
-            if sig['macd_div_diff_ema'] < 0 and sig['ewm_sharpe_ratio'] > 0:
+            macd_sign = '<'
+            if (sig['macd_div_diff_ema'] < 0
+                    and sig['ewm_sharpe_ratio'] >= self.min_sharpe_ratio):
                 act = 'short'
             elif ((position_side == 'short' and sig['macd_div_diff_ema'] > 0)
                   or position_side == 'long'):
@@ -67,13 +72,14 @@ class MacdSignalDetector(object):
             else:
                 act = None
         else:
+            macd_sign = '='
             act = None
         return {
             'act': act, 'granularity': granularity, **sig,
-            'log_str': '{:^51}|'.format(
-                '{0} EMSR [MACD/EMA]:{1:>9}{2:>18}'.format(
+            'log_str': '{:^49}|'.format(
+                '{0} EMSR [MACD{1}EMA]:{2:>7}{3:>18}'.format(
                     self._parse_granularity(granularity=granularity),
-                    '{:.1g}'.format(sig['ewm_sharpe_ratio']),
+                    macd_sign, '{:.2g}'.format(sig['ewm_sharpe_ratio']),
                     np.array2string(
                         np.array([sig['macd'], sig['macd_ema']]),
                         formatter={'float_kind': lambda f: f'{f:.1g}'}
@@ -106,7 +112,7 @@ class MacdSignalDetector(object):
                     {
                         'granularity': g,
                         'pvalue': sm.stats.diagnostic.acorr_ljungbox(
-                            x=(d['macd'] - d['macd_ema'])
+                            x=(d['macd'] - d['macd_ema']).dropna()
                         )[1][0]
                     } for g, d in feature_dict.items()
                 ])

@@ -11,12 +11,13 @@ Usage:
         [--oanda-env=<str>] [--csv=<path>] [--quiet] [<instrument>...]
     macdf trade [--debug|--info] [--oanda-account=<id>] [--oanda-token=<str>]
         [--oanda-env=<str>] [--quiet] [--dry-run] [--granularity=<str>]
-        [--granularity-scorer=<str>] [--betting-strategy=<str>]
-        [--scanned-transaction-count=<int>] [--unit-margin=<ratio>]
-        [--preserved-margin=<ratio>] [--take-profit-limit=<float>]
-        [--trailing-stop-limit=<float>] [--stop-loss-limit=<float>]
-        [--max-spread=<float>] [--fast-ema-span=<int>] [--slow-ema-span=<int>]
-        [--macd-ema-span=<int>] <instrument>...
+        [--granularity-scorer=<str>] [--min-sharpe-ratio=<float>]
+        [--betting-strategy=<str>] [--scanned-transaction-count=<int>]
+        [--unit-margin=<ratio>] [--preserved-margin=<ratio>]
+        [--take-profit-limit=<float>] [--trailing-stop-limit=<float>]
+        [--stop-loss-limit=<float>] [--max-spread=<float>]
+        [--fast-ema-span=<int>] [--slow-ema-span=<int>] [--macd-ema-span=<int>]
+        <instrument>...
 
 Options:
     -h, --help              Print help and exit
@@ -35,6 +36,8 @@ Options:
     --granularity-scorer=<str>
                             Set the granularity scorer [default: ljungboxtest]
                             { ljungboxtest, sharperatio }
+    --min-sharpe-ratio=<float>
+                            Set the min Sharpe ratio [default: 1]
     --betting-strategy=<str>
                             Set the betting strategy [default: constant]
                             { constant, martingale, paroli, dalembert,
@@ -92,6 +95,7 @@ def main():
             instruments=args['<instrument>'],
             granularities=args['--granularity'].split(','),
             granularity_scorer=args['--granularity-scorer'],
+            min_sharpe_ratio=float(args['--min-sharpe-ratio']),
             betting_strategy=args['--betting-strategy'],
             scanned_transaction_count=int(args['--scanned-transaction-count']),
             unit_margin_ratio=float(args['--unit-margin']),
@@ -100,9 +104,9 @@ def main():
             trailing_stop_limit_ratio=float(args['--trailing-stop-limit']),
             stop_loss_limit_ratio=float(args['--stop-loss-limit']),
             max_spread_ratio=float(args['--max-spread']),
-            fast_ema_span=float(args['--fast-ema-span']),
-            slow_ema_span=float(args['--slow-ema-span']),
-            macd_ema_span=float(args['--macd-ema-span']),
+            fast_ema_span=int(args['--fast-ema-span']),
+            slow_ema_span=int(args['--slow-ema-span']),
+            macd_ema_span=int(args['--macd-ema-span']),
             log_dir_path=None, quiet=args['--quiet'], dry_run=args['--dry-run']
         ).invoke()
     else:
