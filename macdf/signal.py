@@ -5,7 +5,6 @@ import os
 import warnings
 from pprint import pformat
 
-import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 
@@ -33,8 +32,8 @@ class MacdSignalDetector(object):
     def detect(self, history_dict, position_side=None):
         feature_dict = {
             g: self._calculate_adjusted_macd(df=d).pipe(
-                lambda f: self._calculate_moving_sharpe_ratio(
-                    df=f, window=self.macd_ema_span,
+                lambda f: self._calculate_ewm_sharpe_ratio(
+                    df=f, span=self.macd_ema_span,
                     is_short=(f['macd'].iloc[-1] < f['macd_ema'].iloc[-1])
                 )
             ) for g, d in history_dict.items()
@@ -44,26 +43,26 @@ class MacdSignalDetector(object):
             macd_delta_ema=lambda d: (d['macd'] - d['macd_ema']).diff().ewm(
                 span=self.macd_ema_span, adjust=False
             ).mean(),
-            msr_delta_ema=lambda d: d['moving_sharpe_ratio'].diff().ewm(
+            emsr_delta_ema=lambda d: d['ewm_sharpe_ratio'].diff().ewm(
                 span=self.macd_ema_span, adjust=False
             ).mean()
         )
         self.__logger.info(f'df_sig:{os.linesep}{df_sig}')
-        sig = df_sig.iloc[-1].to_dict()
+        sig = df_sig.iloc[-1]
         if sig['macd'] > sig['macd_ema']:
-            if sig['macd_delta_ema'] > 0 and sig['msr_delta_ema'] > 0:
+            if sig['macd_delta_ema'] > 0 and sig['emsr_delta_ema'] > 0:
                 act = 'long'
             elif ((position_side == 'long' and sig['macd_delta_ema'] < 0
-                   and sig['msr_delta_ema'] < 0)
+                   and sig['emsr_delta_ema'] < 0)
                   or position_side == 'short'):
                 act = 'closing'
             else:
                 act = None
         elif sig['macd'] < sig['macd_ema']:
-            if sig['macd_delta_ema'] < 0 and sig['msr_delta_ema'] > 0:
+            if sig['macd_delta_ema'] < 0 and sig['emsr_delta_ema'] > 0:
                 act = 'short'
             elif ((position_side == 'short' and sig['macd_delta_ema'] > 0
-                   and sig['msr_delta_ema'] < 0)
+                   and sig['emsr_delta_ema'] < 0)
                   or position_side == 'long'):
                 act = 'closing'
             else:
@@ -71,16 +70,16 @@ class MacdSignalDetector(object):
         else:
             act = None
         return {
-            'act': act, 'granularity': granularity, **sig,
-            'log_str': '{0:^7}|{1:^41}|{2:^36}|'.format(
+            'act': act, 'granularity': granularity, **sig.to_dict(),
+            'log_str': '{0:^7}|{1:^41}|{2:^37}|'.format(
                 self._parse_granularity(granularity=granularity),
                 'MACD-EMA [DELTA]:{0:>9}{1:>11}'.format(
                     '{:.1g}'.format(sig['macd'] - sig['macd_ema']),
                     '[{:.1g}]'.format(sig['macd_delta_ema'])
                 ),
-                'MSR [DELTA]:{0:>9}{1:>11}'.format(
-                    '{:.1g}'.format(sig['moving_sharpe_ratio']),
-                    '[{:.1g}]'.format(sig['msr_delta_ema'])
+                'EMSR [DELTA]:{0:>9}{1:>11}'.format(
+                    '{:.1g}'.format(sig['ewm_sharpe_ratio']),
+                    '[{:.1g}]'.format(sig['emsr_delta_ema'])
                 )
             )
         }
@@ -105,16 +104,15 @@ class MacdSignalDetector(object):
         elif self.granularity_scorer == 'Ljung-Box test':
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore', FutureWarning)
-                df_g = pd.DataFrame([
+                best_g = pd.DataFrame([
                     {
                         'granularity': g,
                         'pvalue': sm.stats.diagnostic.acorr_ljungbox(
                             x=(d['macd'] - d['macd_ema']).dropna()
                         )[1][0]
                     } for g, d in feature_dict.items()
-                ])
-            best_g = df_g.pipe(lambda d: d.iloc[d['pvalue'].idxmin()])
-            self.__logger.debug('pvalue: {}'.format(best_g['pvalue']))
+                ]).pipe(lambda d: d.iloc[d['pvalue'].idxmin()])
+            self.__logger.info('pvalue: {}'.format(best_g['pvalue']))
             granularity = best_g['granularity']
         elif self.granularity_scorer == 'Sharpe ratio':
             df_g = pd.DataFrame([
@@ -126,7 +124,7 @@ class MacdSignalDetector(object):
                 } for g, d in feature_dict.items()
             ])
             best_g = df_g.pipe(lambda d: d.iloc[d['sharpe_ratio'].idxmax()])
-            self.__logger.debug(
+            self.__logger.info(
                 'sharpe_ratio: {}'.format(best_g['sharpe_ratio'])
             )
             granularity = best_g['granularity']
@@ -136,18 +134,18 @@ class MacdSignalDetector(object):
         return granularity
 
     @staticmethod
-    def _calculate_moving_sharpe_ratio(df, window, is_short=False):
+    def _calculate_ewm_sharpe_ratio(df, span=None, is_short=False):
         return df.assign(
             return_rate=lambda d: (
-                (np.exp(np.log(d['mid']).diff()) - 1) * (-1 if is_short else 1)
-                / d['delta_sec'] * d['delta_sec'].mean()
+                (
+                    (1 - d['ask'] / d['bid'].shift(1)) if is_short
+                    else (d['bid'] / d['ask'].shift(1) - 1)
+                ) / d['delta_sec'] * d['delta_sec'].mean()
             )
         ).assign(
-            moving_sharpe_ratio=lambda d: d['return_rate'].pipe(
-                lambda s: (
-                    s.rolling(window=window).mean(skipna=True)
-                    / s.rolling(window=window).std(ddof=1, skipna=True)
-                )
+            ewm_sharpe_ratio=lambda d: (
+                d['return_rate'].ewm(span=span, adjust=False).mean()
+                / d['return_rate'].ewm(span=span, adjust=False).std(ddof=1)
             )
         )
 

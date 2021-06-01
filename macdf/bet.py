@@ -38,9 +38,9 @@ class BettingSystem(object):
         if pl.size == 0:
             return last_size or init_size or unit_size
         else:
-            if pl.size > 1 and pl.iloc[-1] < 0:
+            if pl.iloc[-1] < 0:
                 won_last = False
-            elif pl.size > 1 and pl.iloc[-1] > 0 and pl[-2:].sum() > 0:
+            elif pl.iloc[-1] > 0 and pl[-2:].sum() > 0:
                 won_last = True
             else:
                 won_last = None

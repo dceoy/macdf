@@ -313,7 +313,7 @@ class OandaTraderCore(object):
         )
 
     def print_log(self, data):
-        self.__logger.info(f'console log: {data}')
+        self.__logger.debug(f'console log: {data}')
         if not self.__quiet:
             print(data, flush=True)
 
