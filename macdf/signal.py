@@ -2,20 +2,21 @@
 
 import logging
 import os
-import warnings
 from pprint import pformat
 
+import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 
 
 class MacdSignalDetector(object):
     def __init__(self, fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
-                 granularity_scorer='Ljung-Box test'):
+                 granularity_scorer='Ljung-Box test', max_pvalue=0.1):
         self.__logger = logging.getLogger(__name__)
         self.fast_ema_span = fast_ema_span
         self.slow_ema_span = slow_ema_span
         self.macd_ema_span = macd_ema_span
+        self.max_pvalue = max_pvalue
         granularity_scorers = ['Ljung-Box test', 'Sharpe ratio']
         matched_scorer = [
             s for s in granularity_scorers if (
@@ -49,8 +50,13 @@ class MacdSignalDetector(object):
         )
         self.__logger.info(f'df_sig:{os.linesep}{df_sig}')
         sig = df_sig.iloc[-1]
+        ljungbox_pvalue = self._calculate_ljungbox_test_pvalue(
+            x=np.log(df_sig['mid']).diff().dropna().tail(self.macd_ema_span)
+        )
         if sig['macd'] > sig['macd_ema']:
-            if sig['macd_delta_ema'] > 0 and sig['emsr_delta_ema'] > 0:
+            if (sig['macd_delta_ema'] > 0 and sig['emsr_delta_ema'] > 0
+                    and (sig['ewm_sharpe_ratio'] > 0
+                         or ljungbox_pvalue <= self.max_pvalue)):
                 act = 'long'
             elif ((position_side == 'long' and sig['macd_delta_ema'] < 0
                    and sig['emsr_delta_ema'] < 0)
@@ -59,7 +65,9 @@ class MacdSignalDetector(object):
             else:
                 act = None
         elif sig['macd'] < sig['macd_ema']:
-            if sig['macd_delta_ema'] < 0 and sig['emsr_delta_ema'] > 0:
+            if (sig['macd_delta_ema'] < 0 and sig['emsr_delta_ema'] > 0
+                    and (sig['ewm_sharpe_ratio'] > 0
+                         or ljungbox_pvalue <= self.max_pvalue)):
                 act = 'short'
             elif ((position_side == 'short' and sig['macd_delta_ema'] > 0
                    and sig['emsr_delta_ema'] < 0)
@@ -70,17 +78,19 @@ class MacdSignalDetector(object):
         else:
             act = None
         return {
-            'act': act, 'granularity': granularity, **sig.to_dict(),
-            'log_str': '{0:^7}|{1:^41}|{2:^37}|'.format(
+            'act': act, 'granularity': granularity,
+            'ljungbox_pvalue': ljungbox_pvalue, **sig.to_dict(),
+            'log_str': '{0:^7}|{1:^33}|{2:^27}|{3:^17}|'.format(
                 self._parse_granularity(granularity=granularity),
-                'MACD-EMA [DELTA]:{0:>9}{1:>11}'.format(
+                'MACD-EMA:{0:>9}{1:>11}'.format(
                     '{:.1g}'.format(sig['macd'] - sig['macd_ema']),
                     '[{:.1g}]'.format(sig['macd_delta_ema'])
                 ),
-                'EMSR [DELTA]:{0:>9}{1:>11}'.format(
+                'SR:{0:>9}{1:>11}'.format(
                     '{:.1g}'.format(sig['ewm_sharpe_ratio']),
                     '[{:.1g}]'.format(sig['emsr_delta_ema'])
-                )
+                ),
+                'LBPV:{:>8}'.format('{:.1g}'.format(ljungbox_pvalue))
             )
         }
 
@@ -102,16 +112,14 @@ class MacdSignalDetector(object):
         if len(feature_dict) == 1:
             granularity = list(feature_dict.keys())[0]
         elif self.granularity_scorer == 'Ljung-Box test':
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore', FutureWarning)
-                best_g = pd.DataFrame([
-                    {
-                        'granularity': g,
-                        'pvalue': sm.stats.diagnostic.acorr_ljungbox(
-                            x=(d['macd'] - d['macd_ema']).dropna()
-                        )[1][0]
-                    } for g, d in feature_dict.items()
-                ]).pipe(lambda d: d.iloc[d['pvalue'].idxmin()])
+            best_g = pd.DataFrame([
+                {
+                    'granularity': g,
+                    'pvalue': self._calculate_ljungbox_test_pvalue(
+                        x=(d['macd'] - d['macd_ema']).dropna()
+                    )
+                } for g, d in feature_dict.items()
+            ]).pipe(lambda d: d.iloc[d['pvalue'].idxmin()])
             self.__logger.info('pvalue: {}'.format(best_g['pvalue']))
             granularity = best_g['granularity']
         elif self.granularity_scorer == 'Sharpe ratio':
@@ -148,6 +156,12 @@ class MacdSignalDetector(object):
                 / d['return_rate'].ewm(span=span, adjust=False).std(ddof=1)
             )
         )
+
+    @staticmethod
+    def _calculate_ljungbox_test_pvalue(x, return_df=True, lags=1, **kwargs):
+        return sm.stats.diagnostic.acorr_ljungbox(
+            x=x, return_df=return_df, lags=lags, **kwargs
+        ).iloc[0]['lb_pvalue']
 
     @staticmethod
     def _parse_granularity(granularity='S5'):

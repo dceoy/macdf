@@ -16,7 +16,7 @@ Usage:
         [--preserved-margin=<ratio>] [--take-profit-limit=<float>]
         [--trailing-stop-limit=<float>] [--stop-loss-limit=<float>]
         [--max-spread=<float>] [--fast-ema-span=<int>] [--slow-ema-span=<int>]
-        [--macd-ema-span=<int>] <instrument>...
+        [--macd-ema-span=<int>] [--max-pvalue=<float>] <instrument>...
 
 Options:
     -h, --help              Print help and exit
@@ -54,6 +54,7 @@ Options:
     --fast-ema-span=<int>   Set the fast EMA span [default: 12]
     --slow-ema-span=<int>   Set the slow EMA span [default: 26]
     --macd-ema-span=<int>   Set the MACD EMA span [default: 9]
+    --max-pvalue=<float>    Set the max p-value [default: 0.1]
 
 Commands:
     close                   Close positions (if not <instrument>, close all)
@@ -103,7 +104,8 @@ def main():
             fast_ema_span=int(args['--fast-ema-span']),
             slow_ema_span=int(args['--slow-ema-span']),
             macd_ema_span=int(args['--macd-ema-span']),
-            log_dir_path=None, quiet=args['--quiet'], dry_run=args['--dry-run']
+            max_pvalue=float(args['--max-pvalue']), log_dir_path=None,
+            quiet=args['--quiet'], dry_run=args['--dry-run']
         ).invoke()
     else:
         oanda_api = _create_oanda_api(
