@@ -61,7 +61,8 @@ class MacdSignalDetector(object):
                          or ljungbox_pvalue <= self.max_pvalue)):
                 act = 'long'
             elif ((position_side == 'long' and sig['macd_delta_ema'] < 0
-                   and sig['emsr_delta_ema'] < 0)
+                   and sig['emsr_delta_ema'] < 0
+                   and sig['ewm_sharpe_ratio'] < self.min_sharpe_ratio)
                   or position_side == 'short'):
                 act = 'closing'
             else:
@@ -72,7 +73,8 @@ class MacdSignalDetector(object):
                          or ljungbox_pvalue <= self.max_pvalue)):
                 act = 'short'
             elif ((position_side == 'short' and sig['macd_delta_ema'] > 0
-                   and sig['emsr_delta_ema'] < 0)
+                   and sig['emsr_delta_ema'] < 0
+                   and sig['ewm_sharpe_ratio'] < self.min_sharpe_ratio)
                   or position_side == 'long'):
                 act = 'closing'
             else:
