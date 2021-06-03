@@ -11,12 +11,13 @@ Usage:
         [--oanda-env=<str>] [--csv=<path>] [--quiet] [<instrument>...]
     macdf trade [--debug|--info] [--oanda-account=<id>] [--oanda-token=<str>]
         [--oanda-env=<str>] [--quiet] [--dry-run] [--granularity=<str>]
-        [--granularity-scorer=<str>] [--betting-strategy=<str>]
-        [--scanned-transaction-count=<int>] [--unit-margin=<ratio>]
-        [--preserved-margin=<ratio>] [--take-profit-limit=<float>]
-        [--trailing-stop-limit=<float>] [--stop-loss-limit=<float>]
-        [--max-spread=<float>] [--fast-ema-span=<int>] [--slow-ema-span=<int>]
-        [--macd-ema-span=<int>] [--max-pvalue=<float>] <instrument>...
+        [--betting-strategy=<str>] [--scanned-transaction-count=<int>]
+        [--unit-margin=<ratio>] [--preserved-margin=<ratio>]
+        [--take-profit-limit=<float>] [--trailing-stop-limit=<float>]
+        [--stop-loss-limit=<float>] [--max-spread=<float>]
+        [--fast-ema-span=<int>] [--slow-ema-span=<int>] [--macd-ema-span=<int>]
+        [--max-pvalue=<float>] [--min-sharpe-ratio=<float>]
+        [--granularity-scorer=<str>] <instrument>...
 
 Options:
     -h, --help              Print help and exit
@@ -32,9 +33,6 @@ Options:
     --granularity=<str>     Set the granularities [default: D]
                             { S5, S10, S15, S30, M1, M2, M4, M5, M10, M15, M30,
                               H1, H2, H3, H4, H6, H8, H12, D, W, M }
-    --granularity-scorer=<str>
-                            Set the granularity scorer [default: ljungboxtest]
-                            { ljungboxtest, sharperatio }
     --betting-strategy=<str>
                             Set the betting strategy [default: constant]
                             { constant, martingale, paroli, dalembert,
@@ -54,7 +52,12 @@ Options:
     --fast-ema-span=<int>   Set the fast EMA span [default: 12]
     --slow-ema-span=<int>   Set the slow EMA span [default: 26]
     --macd-ema-span=<int>   Set the MACD EMA span [default: 9]
-    --max-pvalue=<float>    Set the max p-value [default: 0.1]
+    --max-pvalue=<float>    Set the max p-value [default: 0.01]
+    --min-sharpe-ratio=<float>
+                            Set the min Sharpe ratio [default: 1]
+    --granularity-scorer=<str>
+                            Set the granularity scorer [default: ljungboxtest]
+                            { ljungboxtest, sharperatio }
 
 Commands:
     close                   Close positions (if not <instrument>, close all)
@@ -92,7 +95,6 @@ def main():
             oanda_environment=args['--oanda-env'],
             instruments=args['<instrument>'],
             granularities=args['--granularity'].split(','),
-            granularity_scorer=args['--granularity-scorer'],
             betting_strategy=args['--betting-strategy'],
             scanned_transaction_count=int(args['--scanned-transaction-count']),
             unit_margin_ratio=float(args['--unit-margin']),
@@ -104,7 +106,9 @@ def main():
             fast_ema_span=int(args['--fast-ema-span']),
             slow_ema_span=int(args['--slow-ema-span']),
             macd_ema_span=int(args['--macd-ema-span']),
-            max_pvalue=float(args['--max-pvalue']), log_dir_path=None,
+            max_pvalue=float(args['--max-pvalue']),
+            min_sharpe_ratio=float(args['--min-sharpe-ratio']),
+            granularity_scorer=args['--granularity-scorer'], log_dir_path=None,
             quiet=args['--quiet'], dry_run=args['--dry-run']
         ).invoke()
     else:

@@ -11,12 +11,14 @@ import statsmodels.api as sm
 
 class MacdSignalDetector(object):
     def __init__(self, fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
-                 granularity_scorer='Ljung-Box test', max_pvalue=0.1):
+                 max_pvalue=0.1, min_sharpe_ratio=0,
+                 granularity_scorer='Ljung-Box test'):
         self.__logger = logging.getLogger(__name__)
         self.fast_ema_span = fast_ema_span
         self.slow_ema_span = slow_ema_span
         self.macd_ema_span = macd_ema_span
         self.max_pvalue = max_pvalue
+        self.min_sharpe_ratio = min_sharpe_ratio
         granularity_scorers = ['Ljung-Box test', 'Sharpe ratio']
         matched_scorer = [
             s for s in granularity_scorers if (
@@ -55,7 +57,7 @@ class MacdSignalDetector(object):
         )
         if sig['macd'] > sig['macd_ema']:
             if (sig['macd_delta_ema'] > 0 and sig['emsr_delta_ema'] > 0
-                    and (sig['ewm_sharpe_ratio'] > 0
+                    and (sig['ewm_sharpe_ratio'] >= self.min_sharpe_ratio
                          or ljungbox_pvalue <= self.max_pvalue)):
                 act = 'long'
             elif ((position_side == 'long' and sig['macd_delta_ema'] < 0
@@ -66,7 +68,7 @@ class MacdSignalDetector(object):
                 act = None
         elif sig['macd'] < sig['macd_ema']:
             if (sig['macd_delta_ema'] < 0 and sig['emsr_delta_ema'] > 0
-                    and (sig['ewm_sharpe_ratio'] > 0
+                    and (sig['ewm_sharpe_ratio'] >= self.min_sharpe_ratio
                          or ljungbox_pvalue <= self.max_pvalue)):
                 act = 'short'
             elif ((position_side == 'short' and sig['macd_delta_ema'] > 0
