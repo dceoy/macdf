@@ -360,7 +360,7 @@ class OandaTraderCore(object):
                         complete=False):
         res = self.__api.instrument.candles(
             instrument=instrument, price='BA', granularity=granularity,
-            count=int(count)
+            count=min(5000, int(count))
         )
         if 'candles' in res.body:
             return pd.DataFrame([
@@ -392,22 +392,28 @@ class OandaTraderCore(object):
                 'unexpected response:' + os.linesep + pformat(res.body)
             )
 
+    def is_margin_lack(self, instrument):
+        return (
+            not self.pos_dict.get(instrument) and
+            self.balance * self.__preserved_margin_ratio >= self.margin_avail
+        )
+
 
 class AutoTrader(OandaTraderCore):
-    def __init__(self, granularities='D', preserved_margin_ratio=0.01,
-                 max_spread_ratio=0.01, ignore_api_error=False, retry=1,
+    def __init__(self, granularities='D', max_spread_ratio=0.01,
+                 ignore_api_error=False, retry=1, sleeping_ratio=0,
                  fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
                  max_pvalue=0.1, min_sharpe_ratio=0,
                  granularity_scorer='Ljung-Box test', **kwargs):
         super().__init__(**kwargs)
         self.__logger = logging.getLogger(__name__)
         self.__ignore_api_error = ignore_api_error
-        self.__retry = retry
+        self.__retry = int(retry)
+        self.__sleeping_ratio = float(sleeping_ratio)
         self.__granularities = (
             {granularities} if isinstance(granularities, str)
             else set(granularities)
         )
-        self.__preserved_margin_ratio = preserved_margin_ratio
         self.__max_spread_ratio = float(max_spread_ratio)
         self.signal_detector = MacdSignalDetector(
             fast_ema_span=int(fast_ema_span),
@@ -495,12 +501,15 @@ class AutoTrader(OandaTraderCore):
                    or not sig['act'])):
             act = None
             state = '{0} {1}'.format(pos_pct, pos['side'].upper())
-        elif self._is_margin_lack(instrument=i):
+        elif self.is_margin_lack(instrument=i):
             act = None
             state = 'LACK OF FUNDS'
         elif self._is_over_spread(df_rate=df_rate):
             act = None
             state = 'OVER-SPREAD'
+        elif sig['act'] != 'closing' and self._is_low_volume(instrument=i):
+            act = None
+            state = 'LOW VOLUME'
         elif not sig['act']:
             act = None
             state = '-'
@@ -517,16 +526,21 @@ class AutoTrader(OandaTraderCore):
             **{('sig_act' if k == 'act' else k): v for k, v in sig.items()}
         }
 
-    def _is_margin_lack(self, instrument):
-        return (
-            not self.pos_dict.get(instrument) and
-            self.balance * self.__preserved_margin_ratio >= self.margin_avail
-        )
-
     def _is_over_spread(self, df_rate):
         return (
             df_rate.tail(n=1).pipe(
                 lambda d: (d['ask'] - d['bid']) / (d['ask'] + d['bid']) * 2
             ).values[0]
             >= self.__max_spread_ratio
+        )
+
+    def _is_low_volume(self, instrument, granularity='M3'):
+        granularity_min = int(granularity[1:])
+        return self.fetch_candle_df(
+            instrument=instrument, granularity=granularity,
+            count=int(7200 / granularity_min), complete=True
+        )['volume'].fillna(method='ffill').rolling(
+            window=int(60 / granularity_min)
+        ).mean(skipna=True).pipe(
+            lambda s: (s.iloc[-1] < s.quantile(self.__sleeping_ratio))
         )

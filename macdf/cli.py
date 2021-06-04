@@ -12,12 +12,13 @@ Usage:
     macdf trade [--debug|--info] [--oanda-account=<id>] [--oanda-token=<str>]
         [--oanda-env=<str>] [--quiet] [--dry-run] [--granularity=<str>]
         [--betting-strategy=<str>] [--scanned-transaction-count=<int>]
-        [--unit-margin=<ratio>] [--preserved-margin=<ratio>]
-        [--take-profit-limit=<float>] [--trailing-stop-limit=<float>]
-        [--stop-loss-limit=<float>] [--max-spread=<float>]
-        [--fast-ema-span=<int>] [--slow-ema-span=<int>] [--macd-ema-span=<int>]
-        [--max-pvalue=<float>] [--min-sharpe-ratio=<float>]
-        [--granularity-scorer=<str>] <instrument>...
+        [--sleeping=<ratio>] [--unit-margin=<ratio>]
+        [--preserved-margin=<ratio>] [--take-profit-limit=<float>]
+        [--trailing-stop-limit=<float>] [--stop-loss-limit=<float>]
+        [--max-spread=<float>] [--fast-ema-span=<int>] [--slow-ema-span=<int>]
+        [--macd-ema-span=<int>] [--max-pvalue=<float>]
+        [--min-sharpe-ratio=<float>] [--granularity-scorer=<str>]
+        <instrument>...
 
 Options:
     -h, --help              Print help and exit
@@ -39,6 +40,7 @@ Options:
                               oscarsgrind }
     --scanned-transaction-count=<int>
                             Set the transaction count to scan [default: 0]
+    --sleeping=<ratio>      Set the daily sleeping ratio [default: 0]
     --unit-margin=<ratio>   Set the unit margin ratio to NAV [default: 0.01]
     --preserved-margin=<ratio>
                             Set the preserved margin ratio [default: 0.01]
@@ -97,6 +99,7 @@ def main():
             granularities=args['--granularity'].split(','),
             betting_strategy=args['--betting-strategy'],
             scanned_transaction_count=int(args['--scanned-transaction-count']),
+            sleeping_ratio=float(args['--sleeping']),
             unit_margin_ratio=float(args['--unit-margin']),
             preserved_margin_ratio=float(args['--preserved-margin']),
             take_profit_limit_ratio=float(args['--take-profit-limit']),
