@@ -148,11 +148,12 @@ class MacdSignalDetector(object):
     @staticmethod
     def _calculate_ewm_sharpe_ratio(df, span=None, is_short=False):
         return df.assign(
+            spread=lambda d: (d['ask'] - d['bid'])
+        ).assign(
             return_rate=lambda d: (
-                (
-                    (1 - d['ask'] / d['bid'].shift(1)) if is_short
-                    else (d['bid'] / d['ask'].shift(1) - 1)
-                ) / d['delta_sec'] * d['delta_sec'].mean()
+                (np.exp(np.log(d['mid']).diff()) - 1) * (-1 if is_short else 1)
+                / d['delta_sec'] * d['delta_sec'].mean()
+                / d['spread'] * d['spread'].mean()
             )
         ).assign(
             ewm_sharpe_ratio=lambda d: (
