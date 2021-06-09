@@ -534,13 +534,13 @@ class AutoTrader(OandaTraderCore):
             >= self.__max_spread_ratio
         )
 
-    def _is_low_volume(self, instrument, granularity='M3'):
+    def _is_low_volume(self, instrument, granularity='M4'):
         granularity_min = int(granularity[1:])
         return self.fetch_candle_df(
             instrument=instrument, granularity=granularity,
-            count=int(7200 / granularity_min), complete=True
-        )['volume'].fillna(method='ffill').rolling(
-            window=int(60 / granularity_min)
+            count=int(14400 / granularity_min), complete=True
+        )['volume'].fillna(method='ffill').ewm(
+            span=int(60 / granularity_min), adjust=False
         ).mean(skipna=True).pipe(
             lambda s: (s.iloc[-1] < s.quantile(self.__sleeping_ratio))
         )
