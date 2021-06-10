@@ -11,12 +11,14 @@ import statsmodels.api as sm
 
 class MacdSignalDetector(object):
     def __init__(self, fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
-                 max_pvalue=0.1, min_sharpe_ratio=0,
+                 generic_ema_span=9, max_pvalue=0.1, min_sharpe_ratio=0,
                  granularity_scorer='Ljung-Box test'):
+        assert fast_ema_span < slow_ema_span, 'invalid spans'
         self.__logger = logging.getLogger(__name__)
         self.fast_ema_span = fast_ema_span
         self.slow_ema_span = slow_ema_span
         self.macd_ema_span = macd_ema_span
+        self.generic_ema_span = generic_ema_span
         self.max_pvalue = max_pvalue
         self.min_sharpe_ratio = min_sharpe_ratio
         granularity_scorers = ['Ljung-Box test', 'Sharpe ratio']
@@ -36,7 +38,7 @@ class MacdSignalDetector(object):
         feature_dict = {
             g: self._calculate_adjusted_macd(df=d).pipe(
                 lambda f: self._calculate_ewm_sharpe_ratio(
-                    df=f, span=self.macd_ema_span,
+                    df=f, span=self.generic_ema_span,
                     is_short=(f['macd'].iloc[-1] < f['macd_ema'].iloc[-1])
                 )
             ) for g, d in history_dict.items()
@@ -44,16 +46,20 @@ class MacdSignalDetector(object):
         granularity = self._select_best_granularity(feature_dict=feature_dict)
         df_sig = feature_dict[granularity].assign(
             macd_delta_ema=lambda d: (d['macd'] - d['macd_ema']).diff().ewm(
-                span=self.macd_ema_span, adjust=False
+                span=self.generic_ema_span, adjust=False
             ).mean(),
             emsr_delta_ema=lambda d: d['ewm_sharpe_ratio'].diff().ewm(
-                span=self.macd_ema_span, adjust=False
+                span=self.generic_ema_span, adjust=False
             ).mean()
         )
         self.__logger.info(f'df_sig:{os.linesep}{df_sig}')
         sig = df_sig.iloc[-1]
         ljungbox_pvalue = self._calculate_ljungbox_test_pvalue(
-            x=np.log(df_sig['mid']).diff().dropna().tail(self.macd_ema_span)
+            x=df_sig.pipe(
+                lambda d: (
+                    np.log(d['mid']).diff() / d['delta_sec']
+                ).dropna().tail(self.generic_ema_span)
+            )
         )
         if sig['macd'] > sig['macd_ema']:
             if (sig['macd_delta_ema'] > 0 and sig['emsr_delta_ema'] > 0

@@ -403,7 +403,7 @@ class AutoTrader(OandaTraderCore):
     def __init__(self, granularities='D', max_spread_ratio=0.01,
                  ignore_api_error=False, retry=1, sleeping_ratio=0,
                  fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
-                 max_pvalue=0.1, min_sharpe_ratio=0,
+                 generic_ema_span=9, max_pvalue=0.1, min_sharpe_ratio=0,
                  granularity_scorer='Ljung-Box test', **kwargs):
         super().__init__(**kwargs)
         self.__logger = logging.getLogger(__name__)
@@ -418,11 +418,20 @@ class AutoTrader(OandaTraderCore):
         self.signal_detector = MacdSignalDetector(
             fast_ema_span=int(fast_ema_span),
             slow_ema_span=int(slow_ema_span),
-            macd_ema_span=int(macd_ema_span), max_pvalue=float(max_pvalue),
+            macd_ema_span=int(macd_ema_span),
+            generic_ema_span=int(generic_ema_span),
+            max_pvalue=float(max_pvalue),
             min_sharpe_ratio=float(min_sharpe_ratio),
             granularity_scorer=granularity_scorer
         )
-        self.__cache_length = min(int(slow_ema_span) * 10, 5000)
+        self.__cache_length = min(
+            max(
+                self.signal_detector.slow_ema_span,
+                self.signal_detector.macd_ema_span,
+                self.signal_detector.generic_ema_span
+            ) * 2,
+            5000
+        )
         self.__logger.debug('vars(self):' + os.linesep + pformat(vars(self)))
 
     def invoke(self):

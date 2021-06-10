@@ -16,9 +16,9 @@ Usage:
         [--preserved-margin=<ratio>] [--take-profit-limit=<float>]
         [--trailing-stop-limit=<float>] [--stop-loss-limit=<float>]
         [--max-spread=<float>] [--fast-ema-span=<int>] [--slow-ema-span=<int>]
-        [--macd-ema-span=<int>] [--max-pvalue=<float>]
-        [--min-sharpe-ratio=<float>] [--granularity-scorer=<str>]
-        <instrument>...
+        [--macd-ema-span=<int>] [--generic-ema-span=<int>]
+        [--max-pvalue=<float>] [--min-sharpe-ratio=<float>]
+        [--granularity-scorer=<str>] <instrument>...
 
 Options:
     -h, --help              Print help and exit
@@ -54,6 +54,8 @@ Options:
     --fast-ema-span=<int>   Set the fast EMA span [default: 12]
     --slow-ema-span=<int>   Set the slow EMA span [default: 26]
     --macd-ema-span=<int>   Set the MACD EMA span [default: 9]
+    --generic-ema-span=<int>
+                            Set the generic EMA span [default: 9]
     --max-pvalue=<float>    Set the max p-value [default: 0.01]
     --min-sharpe-ratio=<float>
                             Set the min Sharpe ratio [default: 1]
@@ -109,6 +111,7 @@ def main():
             fast_ema_span=int(args['--fast-ema-span']),
             slow_ema_span=int(args['--slow-ema-span']),
             macd_ema_span=int(args['--macd-ema-span']),
+            generic_ema_span=int(args['--generic-ema-span']),
             max_pvalue=float(args['--max-pvalue']),
             min_sharpe_ratio=float(args['--min-sharpe-ratio']),
             granularity_scorer=args['--granularity-scorer'], log_dir_path=None,
