@@ -496,6 +496,7 @@ class AutoTrader(OandaTraderCore):
             },
             position_side=(pos['side'] if pos else None)
         )
+        vns_states = self._calculate_volume_and_sharpe_ratio(instrument=i)
         if not self.price_dict[i]['tradeable']:
             act = None
             state = 'TRADING HALTED'
@@ -516,9 +517,12 @@ class AutoTrader(OandaTraderCore):
         elif self._is_over_spread(df_rate=df_rate):
             act = None
             state = 'OVER-SPREAD'
-        elif sig['act'] != 'closing' and self._is_low_volume(instrument=i):
+        elif sig['act'] != 'closing' and vns_states['is_low_volume_ema']:
             act = None
             state = 'LOW VOLUME'
+        elif sig['act'] != 'closing' and vns_states['is_low_abs_sharpe_ratio']:
+            act = None
+            state = 'LOW SHARPE RATIO'
         elif not sig['act']:
             act = None
             state = '-'
@@ -543,13 +547,26 @@ class AutoTrader(OandaTraderCore):
             >= self.__max_spread_ratio
         )
 
-    def _is_low_volume(self, instrument, granularity='M4'):
+    def _calculate_volume_and_sharpe_ratio(self, instrument, granularity='M4'):
         granularity_min = int(granularity[1:])
+        span = int(60 / granularity_min)
         return self.fetch_candle_df(
             instrument=instrument, granularity=granularity,
             count=int(14400 / granularity_min), complete=True
-        )['volume'].fillna(method='ffill').ewm(
-            span=int(60 / granularity_min), adjust=False
-        ).mean(skipna=True).pipe(
-            lambda s: (s.iloc[-1] < s.quantile(self.__sleeping_ratio))
+        ).fillna(method='ffill').assign(
+            volume_ema=lambda d:
+            d['volume'].ewm(span=span, adjust=False).mean(),
+            return_rate=lambda d:
+            (np.exp(np.log(d[['ask', 'bid']].mean(axis=1)).diff()) - 1)
+        ).assign(
+            abs_sharpe_ratio=lambda d: np.abs(
+                d['return_rate'].ewm(span=span, adjust=False).mean()
+                / d['return_rate'].ewm(span=span, adjust=False).std(ddof=1)
+            )
+        )[['volume_ema', 'abs_sharpe_ratio']].pipe(
+            lambda d: {
+                f'is_low_{k}':
+                (d[k].iloc[-1] < d[k].quantile(self.__sleeping_ratio))
+                for k in d.columns
+            }
         )
