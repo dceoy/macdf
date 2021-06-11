@@ -19,7 +19,7 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
-        'docopt', 'numpy', 'oanda-cli', 'pandas', 'statsmodels', 'v20'
+        'docopt', 'numpy', 'oanda-cli', 'pandas', 'scipy', 'statsmodels', 'v20'
     ],
     entry_points={'console_scripts': ['macdf=macdf.cli:main']},
     classifiers=[

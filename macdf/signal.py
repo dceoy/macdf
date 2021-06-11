@@ -7,19 +7,20 @@ from pprint import pformat
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
+from scipy import stats
 
 
 class MacdSignalDetector(object):
     def __init__(self, fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
-                 generic_ema_span=9, max_pvalue=0.1, min_sharpe_ratio=0,
-                 granularity_scorer='Ljung-Box test'):
+                 generic_ema_span=9, significance_level=0.01,
+                 min_sharpe_ratio=0, granularity_scorer='Ljung-Box test'):
         assert fast_ema_span < slow_ema_span, 'invalid spans'
         self.__logger = logging.getLogger(__name__)
         self.fast_ema_span = fast_ema_span
         self.slow_ema_span = slow_ema_span
         self.macd_ema_span = macd_ema_span
         self.generic_ema_span = generic_ema_span
-        self.max_pvalue = max_pvalue
+        self.significance_level = significance_level
         self.min_sharpe_ratio = min_sharpe_ratio
         granularity_scorers = ['Ljung-Box test', 'Sharpe ratio']
         matched_scorer = [
@@ -54,21 +55,32 @@ class MacdSignalDetector(object):
         )
         self.__logger.info(f'df_sig:{os.linesep}{df_sig}')
         sig = df_sig.iloc[-1]
-        ljungbox_pvalue = self._calculate_ljungbox_test_pvalue(
-            x=df_sig.pipe(
-                lambda d: (
-                    np.log(d['mid']).diff() / d['delta_sec']
-                ).dropna().tail(self.generic_ema_span)
+        lr_ci = df_sig.assign(
+            lr=lambda d:
+            (np.log(d['mid']).diff() / d['delta_sec'] * d['delta_sec'].mean())
+        ).assign(
+            lr_ema=lambda d: d['lr'].ewm(
+                span=self.generic_ema_span, adjust=False
+            ).mean(),
+            lr_emstd=lambda d: d['lr'].ewm(
+                span=self.generic_ema_span, adjust=False
+            ).std(ddof=1)
+        ).pipe(
+            lambda d: stats.norm.interval(
+                alpha=(1 - self.significance_level), loc=d['lr_ema'].iloc[-1],
+                scale=d['lr_emstd'].iloc[-1]
             )
         )
         if sig['macd'] > sig['macd_ema']:
             if (sig['macd_delta_ema'] > 0 and sig['emsr_delta_ema'] > 0
                     and (sig['ewm_sharpe_ratio'] >= self.min_sharpe_ratio
-                         or ljungbox_pvalue <= self.max_pvalue)):
+                         or lr_ci[0] > 0)):
                 act = 'long'
-            elif ((position_side == 'long' and sig['macd_delta_ema'] < 0
-                   and sig['emsr_delta_ema'] < 0
-                   and sig['ewm_sharpe_ratio'] < self.min_sharpe_ratio)
+            elif ((position_side == 'long'
+                   and ((sig['macd_delta_ema'] < 0
+                         and sig['emsr_delta_ema'] < 0)
+                        or sig['ewm_sharpe_ratio'] < self.min_sharpe_ratio
+                        or lr_ci[1] < 0))
                   or position_side == 'short'):
                 act = 'closing'
             else:
@@ -76,11 +88,13 @@ class MacdSignalDetector(object):
         elif sig['macd'] < sig['macd_ema']:
             if (sig['macd_delta_ema'] < 0 and sig['emsr_delta_ema'] > 0
                     and (sig['ewm_sharpe_ratio'] >= self.min_sharpe_ratio
-                         or ljungbox_pvalue <= self.max_pvalue)):
+                         or lr_ci[1] < 0)):
                 act = 'short'
-            elif ((position_side == 'short' and sig['macd_delta_ema'] > 0
-                   and sig['emsr_delta_ema'] < 0
-                   and sig['ewm_sharpe_ratio'] < self.min_sharpe_ratio)
+            elif ((position_side == 'short'
+                   and ((sig['macd_delta_ema'] > 0
+                         and sig['emsr_delta_ema'] < 0)
+                        or sig['ewm_sharpe_ratio'] < self.min_sharpe_ratio
+                        or lr_ci[0] > 0))
                   or position_side == 'long'):
                 act = 'closing'
             else:
@@ -88,19 +102,24 @@ class MacdSignalDetector(object):
         else:
             act = None
         return {
-            'act': act, 'granularity': granularity,
-            'ljungbox_pvalue': ljungbox_pvalue, **sig.to_dict(),
-            'log_str': '{0:^7}|{1:^33}|{2:^27}|{3:^17}|'.format(
+            'act': act, 'granularity': granularity, **sig.to_dict(),
+            'lr_ci_lower_limit': lr_ci[0], 'lr_ci_upper_limit': lr_ci[1],
+            'log_str': '{0:^7}|{1:^31}|{2:^25}|{3:^27}|'.format(
                 self._parse_granularity(granularity=granularity),
-                'MACD-EMA:{0:>9}{1:>11}'.format(
+                'MACD-EMA:{0:>8}{1:>10}'.format(
                     '{:.1g}'.format(sig['macd'] - sig['macd_ema']),
                     '[{:.1g}]'.format(sig['macd_delta_ema'])
                 ),
-                'SR:{0:>9}{1:>11}'.format(
+                'SR:{0:>8}{1:>10}'.format(
                     '{:.1g}'.format(sig['ewm_sharpe_ratio']),
                     '[{:.1g}]'.format(sig['emsr_delta_ema'])
                 ),
-                'LBPV:{:>8}'.format('{:.1g}'.format(ljungbox_pvalue))
+                'LRCI:{:>18}'.format(
+                    np.array2string(
+                        np.array(lr_ci),
+                        formatter={'float_kind': lambda f: f'{f:.1g}'}
+                    )
+                )
             )
         }
 
