@@ -48,43 +48,35 @@ class MacdSignalDetector(object):
         df_sig = feature_dict[granularity].assign(
             macd_delta_ema=lambda d: (d['macd'] - d['macd_ema']).diff().ewm(
                 span=self.generic_ema_span, adjust=False
-            ).mean(),
-            emsr_delta_ema=lambda d: d['emsr'].diff().ewm(
-                span=self.generic_ema_span, adjust=False
             ).mean()
         )
         self.__logger.info(f'df_sig:{os.linesep}{df_sig}')
         sig = df_sig.iloc[-1]
-        ttest_pvalue = stats.ttest_1samp(
-            df_sig.pipe(
-                lambda d: (
-                    np.log(d['mid']).diff()
-                    / d['delta_sec'] * d['delta_sec'].mean()
-                    / d['spread'] * d['spread'].mean()
-                ).dropna().tail(self.generic_ema_span)
-            ),
-            popmean=0
-        )[1]
+        emsr_ci = stats.t.interval(
+            alpha=(1 - self.significance_level),
+            df=(self.generic_ema_span - 1),
+            loc=sig['emsr'], scale=np.sqrt(1 / self.generic_ema_span)
+        )
         if sig['macd'] > sig['macd_ema']:
-            if (sig['macd_delta_ema'] > 0 and sig['emsr_delta_ema'] > 0
-                    and sig['emsr'] > 0
+            if (sig['macd_delta_ema'] > 0 and sig['emsr'] > 0
                     and (sig['emsr'] >= self.min_sharpe_ratio
-                         or ttest_pvalue < self.significance_level)):
+                         or emsr_ci[0] > 0)):
                 act = 'long'
             elif ((position_side == 'long'
-                   and (sig['emsr_delta_ema'] < 0 or sig['emsr'] < 0))
+                   and (sig['macd_delta_ema'] < 0 or sig['emsr'] < 0
+                        or emsr_ci[1] < 0))
                   or position_side == 'short'):
                 act = 'closing'
             else:
                 act = None
         elif sig['macd'] < sig['macd_ema']:
-            if (sig['macd_delta_ema'] < 0 and sig['emsr_delta_ema'] > 0
-                    and sig['emsr'] > 0
+            if (sig['macd_delta_ema'] < 0 and sig['emsr'] > 0
                     and (sig['emsr'] >= self.min_sharpe_ratio
-                         or ttest_pvalue < self.significance_level)):
+                         or emsr_ci[0] > 0)):
                 act = 'short'
             elif ((position_side == 'short'
-                   and (sig['emsr_delta_ema'] < 0 or sig['emsr'] < 0))
+                   and (sig['macd_delta_ema'] < 0 or sig['emsr'] < 0
+                        or emsr_ci[1] < 0))
                   or position_side == 'long'):
                 act = 'closing'
             else:
@@ -93,18 +85,20 @@ class MacdSignalDetector(object):
             act = None
         return {
             'act': act, 'granularity': granularity, **sig.to_dict(),
-            'ttest_pvalue': ttest_pvalue,
-            'log_str': '{0:^7}|{1:^31}|{2:^25}|{3:^14}|'.format(
+            'emsr_ci_lower': emsr_ci[0], 'emsr_ci_upper': emsr_ci[1],
+            'log_str': '{0:^7}|{1:^33}|{2:^31}|'.format(
                 self._parse_granularity(granularity=granularity),
-                'MACD-EMA:{0:>8}{1:>10}'.format(
+                'MACD-EMA:{0:>9}{1:>11}'.format(
                     '{:.1g}'.format(sig['macd'] - sig['macd_ema']),
                     '[{:.1g}]'.format(sig['macd_delta_ema'])
                 ),
-                'SR:{0:>8}{1:>10}'.format(
+                'EMSR:{0:>8}{1:>14}'.format(
                     '{:.1g}'.format(sig['emsr']),
-                    '[{:.1g}]'.format(sig['emsr_delta_ema'])
-                ),
-                'PV:{:>7}'.format('{:.1g}'.format(ttest_pvalue))
+                    np.array2string(
+                        np.array(emsr_ci),
+                        formatter={'float_kind': lambda f: f'{f:.1g}'}
+                    )
+                )
             )
         }
 

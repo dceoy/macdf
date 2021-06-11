@@ -430,7 +430,7 @@ class AutoTrader(OandaTraderCore):
                 self.signal_detector.slow_ema_span,
                 self.signal_detector.macd_ema_span,
                 self.signal_detector.generic_ema_span
-            ) * 2,
+            ) * 3,
             5000
         )
         self.__logger.debug('vars(self):' + os.linesep + pformat(vars(self)))
