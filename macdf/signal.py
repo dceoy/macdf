@@ -45,38 +45,33 @@ class MacdSignalDetector(object):
             ) for g, d in history_dict.items()
         }
         granularity = self._select_best_granularity(feature_dict=feature_dict)
-        df_sig = feature_dict[granularity].assign(
-            macd_delta_ema=lambda d: (d['macd'] - d['macd_ema']).diff().ewm(
-                span=self.generic_ema_span, adjust=False
-            ).mean()
+        sig = feature_dict[granularity].iloc[-1]
+        macd_ema_ci = stats.t.interval(
+            alpha=(1 - self.significance_level),
+            df=(self.macd_ema_span - 1), loc=sig['macd_ema'],
+            scale=np.sqrt(sig['macd_emstd'] / self.macd_ema_span)
         )
-        self.__logger.info(f'df_sig:{os.linesep}{df_sig}')
-        sig = df_sig.iloc[-1]
         emsr_ci = stats.t.interval(
             alpha=(1 - self.significance_level),
-            df=(self.generic_ema_span - 1),
-            loc=sig['emsr'], scale=np.sqrt(1 / self.generic_ema_span)
+            df=(self.generic_ema_span - 1), loc=sig['emsr'],
+            scale=np.sqrt(1 / self.generic_ema_span)
         )
         if sig['macd'] > sig['macd_ema']:
-            if (sig['macd_delta_ema'] > 0 and sig['emsr'] > 0
-                    and (sig['emsr'] >= self.min_sharpe_ratio
-                         or emsr_ci[0] > 0)):
+            if (sig['emsr'] > 0
+                    and (sig['macd'] > macd_ema_ci[1] or emsr_ci[0] > 0
+                         or sig['emsr'] >= self.min_sharpe_ratio)):
                 act = 'long'
-            elif ((position_side == 'long'
-                   and (sig['macd_delta_ema'] < 0 or sig['emsr'] < 0
-                        or emsr_ci[1] < 0))
+            elif ((position_side == 'long' and emsr_ci[1] < 0)
                   or position_side == 'short'):
                 act = 'closing'
             else:
                 act = None
         elif sig['macd'] < sig['macd_ema']:
-            if (sig['macd_delta_ema'] < 0 and sig['emsr'] > 0
-                    and (sig['emsr'] >= self.min_sharpe_ratio
-                         or emsr_ci[0] > 0)):
+            if (sig['emsr'] > 0
+                    and (sig['macd'] < macd_ema_ci[0] or emsr_ci[0] > 0
+                         or sig['emsr'] >= self.min_sharpe_ratio)):
                 act = 'short'
-            elif ((position_side == 'short'
-                   and (sig['macd_delta_ema'] < 0 or sig['emsr'] < 0
-                        or emsr_ci[1] < 0))
+            elif ((position_side == 'short' and emsr_ci[1] < 0)
                   or position_side == 'long'):
                 act = 'closing'
             else:
@@ -85,12 +80,17 @@ class MacdSignalDetector(object):
             act = None
         return {
             'act': act, 'granularity': granularity, **sig.to_dict(),
+            'macd_ema_ci_lower': macd_ema_ci[0],
+            'macd_ema_ci_upper': macd_ema_ci[1],
             'emsr_ci_lower': emsr_ci[0], 'emsr_ci_upper': emsr_ci[1],
-            'log_str': '{0:^7}|{1:^33}|{2:^31}|'.format(
+            'log_str': '{0:^7}|{1:^38}|{2:^31}|'.format(
                 self._parse_granularity(granularity=granularity),
-                'MACD-EMA:{0:>9}{1:>11}'.format(
+                'MACD-EMA:{0:>9}{1:>16}'.format(
                     '{:.1g}'.format(sig['macd'] - sig['macd_ema']),
-                    '[{:.1g}]'.format(sig['macd_delta_ema'])
+                    np.array2string(
+                        (sig['macd'] - np.array(macd_ema_ci)[::-1]),
+                        formatter={'float_kind': lambda f: f'{f:.1g}'}
+                    )
                 ),
                 'EMSR:{0:>8}{1:>14}'.format(
                     '{:.1g}'.format(sig['emsr']),
@@ -113,7 +113,9 @@ class MacdSignalDetector(object):
             ) / d['delta_sec'] * d['delta_sec'].mean()
         ).assign(
             macd_ema=lambda d:
-            d['macd'].ewm(span=self.macd_ema_span, adjust=False).mean()
+            d['macd'].ewm(span=self.macd_ema_span, adjust=False).mean(),
+            macd_emstd=lambda d:
+            d['macd'].ewm(span=self.macd_ema_span, adjust=False).std(ddof=1)
         )
 
     def _select_best_granularity(self, feature_dict):
