@@ -17,7 +17,7 @@ Usage:
         [--trailing-stop-limit=<float>] [--stop-loss-limit=<float>]
         [--max-spread=<float>] [--fast-ema-span=<int>] [--slow-ema-span=<int>]
         [--macd-ema-span=<int>] [--generic-ema-span=<int>]
-        [--significance-level=<float>] [--min-sharpe-ratio=<float>]
+        [--significance-level=<float>] [--trigger-sharpe-ratio=<float>]
         [--granularity-scorer=<str>] <instrument>...
 
 Options:
@@ -58,8 +58,8 @@ Options:
                             Set the generic EMA span [default: 9]
     --significance-level=<float>
                             Set the significance level [default: 0.01]
-    --min-sharpe-ratio=<float>
-                            Set the min Sharpe ratio [default: 1]
+    --trigger-sharpe-ratio=<float>
+                            Set the trigger Sharpe ratio [default: 1]
     --granularity-scorer=<str>
                             Set the granularity scorer [default: ljungboxtest]
                             { ljungboxtest, sharperatio }
@@ -114,7 +114,7 @@ def main():
             macd_ema_span=int(args['--macd-ema-span']),
             generic_ema_span=int(args['--generic-ema-span']),
             significance_level=float(args['--significance-level']),
-            min_sharpe_ratio=float(args['--min-sharpe-ratio']),
+            trigger_sharpe_ratio=float(args['--trigger-sharpe-ratio']),
             granularity_scorer=args['--granularity-scorer'], log_dir_path=None,
             quiet=args['--quiet'], dry_run=args['--dry-run']
         ).invoke()
