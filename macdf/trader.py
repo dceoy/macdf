@@ -498,6 +498,7 @@ class AutoTrader(OandaTraderCore):
             },
             position_side=(pos['side'] if pos else None)
         )
+        sleep_triggers = self._check_volume_and_volatility(instrument=i)
         if not self.price_dict[i]['tradeable']:
             act = None
             state = 'TRADING HALTED'
@@ -518,7 +519,13 @@ class AutoTrader(OandaTraderCore):
         elif self._is_over_spread(df_rate=df_rate):
             act = None
             state = 'OVER-SPREAD'
-        elif sig['act'] != 'closing' and self._is_low_volume(instrument=i):
+        elif sig['act'] != 'closing' and sleep_triggers.all():
+            act = None
+            state = 'LOW HV AND VOLUME'
+        elif sig['act'] != 'closing' and sleep_triggers['hv_ema']:
+            act = None
+            state = 'LOW HV'
+        elif sig['act'] != 'closing' and sleep_triggers['volume_ema']:
             act = None
             state = 'LOW VOLUME'
         elif not sig['act']:
@@ -545,13 +552,19 @@ class AutoTrader(OandaTraderCore):
             >= self.__max_spread_ratio
         )
 
-    def _is_low_volume(self, instrument, granularity='M4'):
+    def _check_volume_and_volatility(self, instrument, granularity='M4'):
         granularity_min = int(granularity[1:])
+        span = int(60 / granularity_min)
         return self.fetch_candle_df(
             instrument=instrument, granularity=granularity,
             count=int(14400 / granularity_min), complete=True
-        )['volume'].fillna(method='ffill').ewm(
-            span=int(60 / granularity_min), adjust=False
-        ).mean(skipna=True).pipe(
-            lambda s: (s.iloc[-1] < s.quantile(self.__sleeping_ratio))
+        ).assign(
+            volume_ema=lambda d: d['volume'].fillna(method='ffill').ewm(
+                span=span, adjust=False
+            ).mean(skipna=True),
+            hv_ema=lambda d: np.log(d[['ask', 'bid']].mean(axis=1)).diff().ewm(
+                span=span, adjust=False
+            ).std(ddof=1)
+        )[['volume_ema', 'hv_ema']].pipe(
+            lambda d: (d.iloc[-1] < d.quantile(self.__sleeping_ratio))
         )
