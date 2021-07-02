@@ -27,8 +27,12 @@ setup(
         'Environment :: Console',
         'Intended Audience :: Financial and Insurance Industry',
         'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
-        'Operating System :: POSIX :: Linux',
         'Operating System :: MacOS',
+        'Operating System :: MacOS :: MacOS X',
+        'Operating System :: POSIX',
+        'Operating System :: POSIX :: Linux',
+        'Operating System :: Unix',
+        'Programming Language :: Python',
         'Programming Language :: Python :: 3',
         'Topic :: Office/Business :: Financial :: Investment'
     ],

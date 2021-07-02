@@ -139,9 +139,7 @@ class MacdSignalDetector(object):
             ) / d['delta_sec'] * d['delta_sec'].mean()
         ).assign(
             macd_ema=lambda d:
-            d['macd'].ewm(span=self.macd_ema_span, adjust=False).mean(),
-            macd_emstd=lambda d:
-            d['macd'].ewm(span=self.macd_ema_span, adjust=False).std(ddof=1)
+            d['macd'].ewm(span=self.macd_ema_span, adjust=False).mean()
         )
 
     def _select_best_granularity(self, feature_dict):
