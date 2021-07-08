@@ -401,7 +401,7 @@ class OandaTraderCore(object):
 
 class AutoTrader(OandaTraderCore):
     def __init__(self, granularities='D', max_spread_ratio=0.01,
-                 ignore_api_error=False, retry=1, sleeping_ratio=0,
+                 ignore_api_error=False, retry_count=1, sleeping_ratio=0,
                  fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
                  generic_ema_span=9, significance_level=0.01,
                  trigger_sharpe_ratio=1, granularity_scorer='Ljung-Box test',
@@ -409,7 +409,7 @@ class AutoTrader(OandaTraderCore):
         super().__init__(**kwargs)
         self.__logger = logging.getLogger(__name__)
         self.__ignore_api_error = ignore_api_error
-        self.__retry = int(retry)
+        self.__retry_count = int(retry_count)
         self.__sleeping_ratio = float(sleeping_ratio)
         self.__granularities = (
             {granularities} if isinstance(granularities, str)
@@ -437,14 +437,16 @@ class AutoTrader(OandaTraderCore):
 
     def invoke(self):
         signal.signal(signal.SIGINT, signal.SIG_DFL)
-        for r in range(self.__retry + 1):
+        for r in range(self.__retry_count + 1):
             try:
                 for i in self.instruments:
                     self.refresh_oanda_dicts()
                     self.make_decision(instrument=i)
             except (V20ConnectionError, V20Timeout, APIResponseError) as e:
-                if self.__ignore_api_error or r < self.__retry:
-                    self.__logger.error(e)
+                if self.__ignore_api_error or r < self.__retry_count:
+                    self.__logger.warning(
+                        f'Retry due to an API error:{os.linesep}{e}'
+                    )
                 else:
                     raise e
             else:

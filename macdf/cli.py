@@ -10,15 +10,16 @@ Usage:
     macdf spread [--debug|--info] [--oanda-account=<id>] [--oanda-token=<str>]
         [--oanda-env=<str>] [--csv=<path>] [--quiet] [<instrument>...]
     macdf trade [--debug|--info] [--oanda-account=<id>] [--oanda-token=<str>]
-        [--oanda-env=<str>] [--quiet] [--dry-run] [--granularity=<str>]
-        [--betting-strategy=<str>] [--scanned-transaction-count=<int>]
-        [--sleeping=<ratio>] [--unit-margin=<ratio>]
-        [--preserved-margin=<ratio>] [--take-profit-limit=<float>]
-        [--trailing-stop-limit=<float>] [--stop-loss-limit=<float>]
-        [--max-spread=<float>] [--fast-ema-span=<int>] [--slow-ema-span=<int>]
-        [--macd-ema-span=<int>] [--generic-ema-span=<int>]
-        [--significance-level=<float>] [--trigger-sharpe-ratio=<float>]
-        [--granularity-scorer=<str>] <instrument>...
+        [--oanda-env=<str>] [--quiet] [--dry-run] [--retry-count=<int>]
+        [--granularity=<str>] [--betting-strategy=<str>]
+        [--scanned-transaction-count=<int>] [--sleeping=<ratio>]
+        [--unit-margin=<ratio>] [--preserved-margin=<ratio>]
+        [--take-profit-limit=<float>] [--trailing-stop-limit=<float>]
+        [--stop-loss-limit=<float>] [--max-spread=<float>]
+        [--fast-ema-span=<int>] [--slow-ema-span=<int>] [--macd-ema-span=<int>]
+        [--generic-ema-span=<int>] [--significance-level=<float>]
+        [--trigger-sharpe-ratio=<float>] [--granularity-scorer=<str>]
+        <instrument>...
 
 Options:
     -h, --help              Print help and exit
@@ -31,6 +32,7 @@ Options:
     --csv=<path>            Write data with CSV into a file
     --quiet                 Suppress messages
     --dry-run               Invoke a trader with dry-run mode
+    --retry-count=<int>     Set the retry count due to API errors [default: 0]
     --granularity=<str>     Set the granularities [default: D]
                             { S5, S10, S15, S30, M1, M2, M4, M5, M10, M15, M30,
                               H1, H2, H3, H4, H6, H8, H12, D, W, M }
@@ -98,6 +100,7 @@ def main():
         AutoTrader(
             oanda_account_id=oanda_account_id, oanda_api_token=oanda_api_token,
             oanda_environment=args['--oanda-env'],
+            retry_count=int(args['--retry-count']),
             instruments=args['<instrument>'],
             granularities=args['--granularity'].split(','),
             betting_strategy=args['--betting-strategy'],
