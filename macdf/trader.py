@@ -438,19 +438,19 @@ class AutoTrader(OandaTraderCore):
 
     def invoke(self):
         signal.signal(signal.SIGINT, signal.SIG_DFL)
-        for r in range(self.__retry_count + 1):
-            try:
-                for i in self.instruments:
+        for i in self.instruments:
+            for r in range(self.__retry_count + 1):
+                try:
                     self.refresh_oanda_dicts()
                     self.make_decision(instrument=i)
-            except (V20ConnectionError, V20Timeout, APIResponseError) as e:
-                if self.__ignore_api_error or r < self.__retry_count:
-                    self.__logger.warning(f'Retry due to an API error: {e}')
-                    sleep(r)
+                except (V20ConnectionError, V20Timeout, APIResponseError) as e:
+                    if self.__ignore_api_error or r < self.__retry_count:
+                        self.__logger.warning(f'Retry due to an error: {e}')
+                        sleep(r)
+                    else:
+                        raise e
                 else:
-                    raise e
-            else:
-                break
+                    break
 
     def make_decision(self, instrument):
         df_r = self.fetch_latest_price_df(instrument=instrument)
