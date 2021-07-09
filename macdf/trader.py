@@ -7,6 +7,7 @@ import signal
 from math import ceil
 from pathlib import Path
 from pprint import pformat
+from time import sleep
 
 import numpy as np
 import pandas as pd
@@ -444,9 +445,8 @@ class AutoTrader(OandaTraderCore):
                     self.make_decision(instrument=i)
             except (V20ConnectionError, V20Timeout, APIResponseError) as e:
                 if self.__ignore_api_error or r < self.__retry_count:
-                    self.__logger.warning(
-                        f'Retry due to an API error:{os.linesep}{e}'
-                    )
+                    self.__logger.warning(f'Retry due to an API error: {e}')
+                    sleep(r)
                 else:
                     raise e
             else:
