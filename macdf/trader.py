@@ -493,10 +493,12 @@ class AutoTrader(OandaTraderCore):
         )
         sig = self.signal_detector.detect(
             history_dict={
-                g: self.fetch_candle_df(
-                    instrument=i, granularity=g, count=self.__cache_length
-                )[['ask', 'bid']].append(df_rate[['ask', 'bid']])
-                for g in self.__granularities
+                g: pd.concat([
+                    self.fetch_candle_df(
+                        instrument=i, granularity=g, count=self.__cache_length
+                    )[['ask', 'bid']],
+                    df_rate[['ask', 'bid']]
+                ]) for g in self.__granularities
             },
             position_side=(pos['side'] if pos else None)
         )
