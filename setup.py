@@ -26,7 +26,7 @@ setup(
         'Development Status :: 4 - Beta',
         'Environment :: Console',
         'Intended Audience :: Financial and Insurance Industry',
-        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
+        'License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)',
         'Operating System :: MacOS',
         'Operating System :: MacOS :: MacOS X',
         'Operating System :: POSIX',

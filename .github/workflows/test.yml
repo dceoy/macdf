@@ -22,7 +22,7 @@ jobs:
             autopep8 flake8 flake8-bugbear flake8-isort pep8-naming .
       - name: Validate the codes using flake8
         run: |
-          find . -type f -name '*.py' | xargs flake8
+          find macdf -type f -name '*.py' | xargs flake8
       - name: Test commands
         run: |
           macdf --version
