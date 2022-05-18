@@ -1,10 +1,12 @@
-FROM dceoy/oanda-cli:latest
+FROM arm32v7/python:bullseye
 
-ADD https://github.com/dceoy/oanda-cli/archive/master.tar.gz /tmp/oanda-cli.tar.gz
-ADD . /tmp/macdf
+ENV DEBIAN_FRONTEND noninteractive
 
 RUN set -e \
-      && pip install -U --no-cache-dir /tmp/oanda-cli.tar.gz /tmp/macdf \
-      && rm -rf /tmp/oanda-cli.tar.gz /tmp/macdf
+      && ln -sf bash /bin/sh
+
+RUN set -e \
+      && pip install -U --no-cache-dir \
+        https://github.com/dceoy/macdf/archive/main.tar.gz
 
 ENTRYPOINT ["/usr/local/bin/macdf"]

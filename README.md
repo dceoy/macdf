@@ -4,6 +4,7 @@ macdf
 MACD-based Forex Trader using Oanda API
 
 [![Test](https://github.com/dceoy/macdf/actions/workflows/test.yml/badge.svg)](https://github.com/dceoy/macdf/actions/workflows/test.yml)
+[![CI to Docker Hub](https://github.com/dceoy/macdf/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/dceoy/macdf/actions/workflows/docker-publish.yml)
 
 Installation
 ------------
