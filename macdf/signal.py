@@ -109,7 +109,7 @@ class MacdSignalDetector(object):
             'delta_macd_diff_emci_upper': delta_macd_diff_emci[1],
             'delta_emsr_emci_lower': delta_emsr_emci[0],
             'delta_emsr_emci_upper': delta_emsr_emci[1],
-            'log_str': '{0:^7}|{1:^41}|{2:^34}|'.format(
+            'log_str': '{0:^7}|{1:^41}|{2:^35}|'.format(
                 self._parse_granularity(granularity=granularity),
                 'MACD-EMA:{0:>10}{1:>18}'.format(
                     '{:.1g}'.format(sig['macd'] - sig['macd_ema']),
@@ -118,7 +118,7 @@ class MacdSignalDetector(object):
                         formatter={'float_kind': lambda f: f'{f:.1g}'}
                     )
                 ),
-                'EMSR:{0:>9}{1:>16}'.format(
+                'EMSR:{0:>9}{1:>17}'.format(
                     '{:.1g}'.format(sig['emsr']),
                     np.array2string(
                         np.array(delta_emsr_emci),
