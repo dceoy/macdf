@@ -1,4 +1,4 @@
-FROM arm32v7/ubuntu:latest
+FROM ubuntu:latest
 
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -13,8 +13,7 @@ RUN set -e \
       && apt-get -y update \
       && apt-get -y dist-upgrade \
       && apt-get -y install --no-install-recommends --no-install-suggests \
-        apt-transport-https ca-certificates curl g++ gcc gfortran \
-        libatlas-base-dev libopenblas-dev python3-dev python3-distutils \
+        apt-transport-https ca-certificates curl python3 python3-distutils \
       && apt-get -y autoremove \
       && apt-get clean \
       && rm -rf /var/lib/apt/lists/*
