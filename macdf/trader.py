@@ -27,7 +27,8 @@ class OandaTraderCore(object):
                  scanned_transaction_count=0, unit_margin_ratio=0.01,
                  preserved_margin_ratio=0.01, take_profit_limit_ratio=0.01,
                  trailing_stop_limit_ratio=0.01, stop_loss_limit_ratio=0.01,
-                 log_dir_path=None, quiet=False, dry_run=False):
+                 ignore_api_error=False, retry_count=1, log_dir_path=None,
+                 quiet=False, dry_run=False):
         self.__logger = logging.getLogger(__name__)
         self.__api = Context(
             hostname=f'api-fx{oanda_environment}.oanda.com',
@@ -42,6 +43,8 @@ class OandaTraderCore(object):
         self.__take_profit_limit_ratio = float(take_profit_limit_ratio)
         self.__trailing_stop_limit_ratio = float(trailing_stop_limit_ratio)
         self.__stop_loss_limit_ratio = float(stop_loss_limit_ratio)
+        self.__ignore_api_error = ignore_api_error
+        self.__retry_count = int(retry_count)
         self.__quiet = quiet
         self.__dry_run = dry_run
         if log_dir_path:
@@ -65,6 +68,23 @@ class OandaTraderCore(object):
         self.price_dict = dict()
         self.unit_costs = dict()
 
+    @staticmethod
+    def retry_if_connection_fails(func):
+        def wrapper(self, *args, **kwargs):
+            for r in range(self.__retry_count + 1):
+                try:
+                    ret = func(self, *args, **kwargs)
+                except (V20ConnectionError, V20Timeout, APIResponseError) as e:
+                    if self.__ignore_api_error or r < self.__retry_count:
+                        self.__logger.warning(f'Retry due to an error: {e}')
+                    else:
+                        raise e
+                else:
+                    break
+            return ret
+        return wrapper
+
+    @retry_if_connection_fails
     def _refresh_account_dicts(self):
         res = self.__api.account.get(accountID=self.__account_id)
         if 'account' in res.body and 'lastTransactionID' in res.body:
@@ -89,6 +109,7 @@ class OandaTraderCore(object):
             ) for p in acc.positions if p.long.tradeIDs or p.short.tradeIDs
         }
 
+    @retry_if_connection_fails
     def _place_order(self, closing=False, **kwargs):
         if closing:
             p = self.pos_dict.get(kwargs['instrument'])
@@ -128,6 +149,7 @@ class OandaTraderCore(object):
         self._refresh_price_dict()
         self._refresh_unit_costs()
 
+    @retry_if_connection_fails
     def _refresh_txn_list(self):
         init = (not self.__last_txn_id)
         res = self.__api.transaction.since(
@@ -153,6 +175,7 @@ class OandaTraderCore(object):
                         json.dumps(new_txns), path=self.__txn_log_path
                     )
 
+    @retry_if_connection_fails
     def _refresh_inst_dict(self):
         res = self.__api.account.instruments(accountID=self.__account_id)
         if 'instruments' in res.body:
@@ -164,6 +187,7 @@ class OandaTraderCore(object):
                 'unexpected response:' + os.linesep + pformat(res.body)
             )
 
+    @retry_if_connection_fails
     def _refresh_price_dict(self):
         res = self.__api.pricing.get(
             accountID=self.__account_id,
@@ -221,10 +245,14 @@ class OandaTraderCore(object):
             self.__logger.info('Close a position: {}'.format(pos['side']))
             self._place_order(closing=True, instrument=instrument)
             self._refresh_txn_list()
-        if act in ['long', 'short']:
-            limits = self._design_order_limits(instrument=instrument, side=act)
+        if act and act in ['long', 'short']:
+            limits = self._determine_order_limits(
+                instrument=instrument, side=act
+            )
             self.__logger.debug(f'limits: {limits}')
-            units = self._design_order_units(instrument=instrument, side=act)
+            units = self._determine_order_units(
+                instrument=instrument, side=act
+            )
             self.__logger.debug(f'units: {units}')
             if units != 0:
                 self.__logger.info(f'Open an order: {act}')
@@ -236,13 +264,14 @@ class OandaTraderCore(object):
                     }
                 )
                 self._refresh_txn_list()
+                return units
             else:
                 self.__logger.info(f'Skip an order: {act}')
-            return units
+                return 0
         else:
             return 0
 
-    def _design_order_limits(self, instrument, side):
+    def _determine_order_limits(self, instrument, side):
         ie = self.__inst_dict[instrument]
         r = self.price_dict[instrument][{'long': 'ask', 'short': 'bid'}[side]]
         ts_range = [
@@ -281,7 +310,7 @@ class OandaTraderCore(object):
             'trailingStopLossOnFill': {'distance': trailing_stop, **tif}
         }
 
-    def _design_order_units(self, instrument, side):
+    def _determine_order_units(self, instrument, side):
         max_size = int(self.__inst_dict[instrument]['maximumOrderUnits'])
         avail_size = max(
             ceil(
@@ -356,6 +385,7 @@ class OandaTraderCore(object):
             header=(not Path(path).is_file())
         )
 
+    @retry_if_connection_fails
     def fetch_candle_df(self, instrument, granularity='S5', count=5000,
                         complete=True):
         res = self.__api.instrument.candles(
@@ -376,6 +406,7 @@ class OandaTraderCore(object):
                 'unexpected response:' + os.linesep + pformat(res.body)
             )
 
+    @retry_if_connection_fails
     def fetch_latest_price_df(self, instrument):
         res = self.__api.pricing.get(
             accountID=self.__account_id, instruments=instrument
@@ -401,15 +432,12 @@ class OandaTraderCore(object):
 
 class AutoTrader(OandaTraderCore):
     def __init__(self, granularities='D', max_spread_ratio=0.01,
-                 ignore_api_error=False, retry_count=1, sleeping_ratio=0,
-                 fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
-                 generic_ema_span=9, significance_level=0.01,
+                 sleeping_ratio=0, fast_ema_span=12, slow_ema_span=26,
+                 macd_ema_span=9, generic_ema_span=9, significance_level=0.01,
                  trigger_sharpe_ratio=1, granularity_scorer='Ljung-Box test',
                  **kwargs):
         super().__init__(**kwargs)
         self.__logger = logging.getLogger(__name__)
-        self.__ignore_api_error = ignore_api_error
-        self.__retry_count = int(retry_count)
         self.__sleeping_ratio = float(sleeping_ratio)
         self.__granularities = (
             {granularities} if isinstance(granularities, str)
@@ -438,17 +466,8 @@ class AutoTrader(OandaTraderCore):
     def invoke(self):
         signal.signal(signal.SIGINT, signal.SIG_DFL)
         for i in self.instruments:
-            for r in range(self.__retry_count + 1):
-                try:
-                    self.refresh_oanda_dicts()
-                    self.make_decision(instrument=i)
-                except (V20ConnectionError, V20Timeout, APIResponseError) as e:
-                    if self.__ignore_api_error or r < self.__retry_count:
-                        self.__logger.warning(f'Retry due to an error: {e}')
-                    else:
-                        raise e
-                else:
-                    break
+            self.refresh_oanda_dicts()
+            self.make_decision(instrument=i)
 
     def make_decision(self, instrument):
         df_r = self.fetch_latest_price_df(instrument=instrument)

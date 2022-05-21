@@ -100,7 +100,6 @@ def main():
         AutoTrader(
             oanda_account_id=oanda_account_id, oanda_api_token=oanda_api_token,
             oanda_environment=args['--oanda-env'],
-            retry_count=int(args['--retry-count']),
             instruments=args['<instrument>'],
             granularities=args['--granularity'].split(','),
             betting_strategy=args['--betting-strategy'],
@@ -118,7 +117,8 @@ def main():
             generic_ema_span=int(args['--generic-ema-span']),
             significance_level=float(args['--significance-level']),
             trigger_sharpe_ratio=float(args['--trigger-sharpe-ratio']),
-            granularity_scorer=args['--granularity-scorer'], log_dir_path=None,
+            granularity_scorer=args['--granularity-scorer'],
+            retry_count=int(args['--retry-count']), log_dir_path=None,
             quiet=args['--quiet'], dry_run=args['--dry-run']
         ).invoke()
     else:
