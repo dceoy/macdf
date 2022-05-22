@@ -47,58 +47,38 @@ class MacdSignalDetector(object):
             ) for g, d in history_dict.items()
         }
         granularity = self._select_best_granularity(feature_dict=feature_dict)
-        df_sig = feature_dict[granularity].assign(
-            delta_macd_diff=lambda d: (d['macd'] - d['macd_ema']).diff(),
-            delta_emsr=lambda d: d['emsr'].diff()
-        ).assign(
-            delta_macd_diff_ema=lambda d: d['delta_macd_diff'].ewm(
-                span=self.generic_ema_span, adjust=False
-            ).mean(),
-            delta_macd_diff_emvar=lambda d: d['delta_macd_diff'].ewm(
-                span=self.generic_ema_span, adjust=False
-            ).var(ddof=1),
-            delta_emsr_ema=lambda d: d['delta_emsr'].ewm(
-                span=self.generic_ema_span, adjust=False
-            ).mean(),
-            delta_emsr_emvar=lambda d: d['delta_emsr'].ewm(
-                span=self.generic_ema_span, adjust=False
-            ).var(ddof=1)
-        ).tail(self.signal_count)
+        macd_diff_emci = self._calculate_emci(
+            series=feature_dict[granularity].pipe(
+                lambda d: (d['macd'] - d['macd_ema'])
+            ),
+            span=self.generic_ema_span,
+            significance_level=self.significance_level
+        )
+        emsr_emci = self._calculate_emci(
+            series=feature_dict[granularity]['emsr'],
+            span=self.generic_ema_span,
+            significance_level=self.significance_level
+        )
+        df_sig = feature_dict[granularity].tail(self.signal_count)
         sig = df_sig.iloc[-1]
-        delta_macd_diff_emci = scs.t.interval(
-            alpha=(1 - self.significance_level),
-            df=(self.generic_ema_span - 1), loc=sig['delta_macd_diff_ema'],
-            scale=np.sqrt(sig['delta_macd_diff_emvar'] / self.generic_ema_span)
-        )
-        delta_emsr_emci = scs.t.interval(
-            alpha=(1 - self.significance_level),
-            df=(self.generic_ema_span - 1), loc=sig['delta_emsr_ema'],
-            scale=np.sqrt(sig['delta_emsr_emvar'] / self.generic_ema_span)
-        )
         if (df_sig['macd'] > df_sig['macd_ema']).all():
             if ((df_sig['emsr'] > 0).all()
-                    and sig['delta_macd_diff_ema'] > 0
-                    and sig['delta_emsr_ema'] > 0
-                    and (delta_macd_diff_emci[0] > 0
-                         or delta_emsr_emci[0] > 0
+                    and ((macd_diff_emci[0] > 0 and emsr_emci[0] > 0)
                          or sig['emsr'] >= self.trigger_sharpe_ratio)):
                 act = 'long'
             elif ((position_side == 'long' and (df_sig['emsr'] < 0).all()
-                   and (delta_macd_diff_emci[1] < 0 or delta_emsr_emci[1] < 0))
+                   and (macd_diff_emci[1] < 0 or emsr_emci[1] < 0))
                   or position_side == 'short'):
                 act = 'closing'
             else:
                 act = None
         elif (df_sig['macd'] < df_sig['macd_ema']).all():
             if ((df_sig['emsr'] > 0).all()
-                    and sig['delta_macd_diff_ema'] < 0
-                    and sig['delta_emsr_ema'] > 0
-                    and (delta_macd_diff_emci[1] < 0
-                         or delta_emsr_emci[0] > 0
+                    and ((macd_diff_emci[1] < 0 and emsr_emci[0] > 0)
                          or sig['emsr'] >= self.trigger_sharpe_ratio)):
                 act = 'short'
             elif ((position_side == 'short' and (df_sig['emsr'] < 0).all()
-                   and (delta_macd_diff_emci[0] > 0 or delta_emsr_emci[1] < 0))
+                   and (macd_diff_emci[0] > 0 or emsr_emci[1] < 0))
                   or position_side == 'long'):
                 act = 'closing'
             else:
@@ -107,23 +87,22 @@ class MacdSignalDetector(object):
             act = None
         return {
             'act': act, 'granularity': granularity, **sig.to_dict(),
-            'delta_macd_diff_emci_lower': delta_macd_diff_emci[0],
-            'delta_macd_diff_emci_upper': delta_macd_diff_emci[1],
-            'delta_emsr_emci_lower': delta_emsr_emci[0],
-            'delta_emsr_emci_upper': delta_emsr_emci[1],
+            'macd_diff_emci_lower': macd_diff_emci[0],
+            'macd_diff_emci_upper': macd_diff_emci[1],
+            'emsr_emci_lower': emsr_emci[0], 'emsr_emci_upper': emsr_emci[1],
             'log_str': '{0:^7}|{1:^41}|{2:^35}|'.format(
                 self._parse_granularity(granularity=granularity),
                 'MACD-EMA:{0:>10}{1:>18}'.format(
                     '{:.1g}'.format(sig['macd'] - sig['macd_ema']),
                     np.array2string(
-                        np.array(delta_macd_diff_emci),
+                        np.array(macd_diff_emci),
                         formatter={'float_kind': lambda f: f'{f:.1g}'}
                     )
                 ),
                 'EMSR:{0:>9}{1:>17}'.format(
                     '{:.1g}'.format(sig['emsr']),
                     np.array2string(
-                        np.array(delta_emsr_emci),
+                        np.array(emsr_emci),
                         formatter={'float_kind': lambda f: f'{f:.1g}'}
                     )
                 )

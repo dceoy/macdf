@@ -32,9 +32,9 @@ class BettingSystem(object):
         ]
         last_size = abs(int(size_list[-1] if size_list else 0))
         self.__logger.debug(f'last_size: {last_size}')
-        pl = pd.Series([
-            t['pl'] for t in inst_pl_txns
-        ]).astype(float).pipe(lambda a: a[a != 0])
+        pl = pd.Series(
+            [float(t['pl']) for t in inst_pl_txns if t['pl'] != 0], dtype=float
+        )
         if pl.size == 0:
             return last_size or init_size or unit_size
         else:
