@@ -13,7 +13,8 @@ import statsmodels.api as sm
 class MacdSignalDetector(object):
     def __init__(self, fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
                  generic_ema_span=9, significance_level=0.01,
-                 trigger_sharpe_ratio=1, granularity_scorer='Ljung-Box test'):
+                 trigger_sharpe_ratio=1, signal_count=1,
+                 granularity_scorer='Ljung-Box test'):
         assert fast_ema_span < slow_ema_span, 'invalid spans'
         self.__logger = logging.getLogger(__name__)
         self.fast_ema_span = fast_ema_span
@@ -22,6 +23,7 @@ class MacdSignalDetector(object):
         self.generic_ema_span = generic_ema_span
         self.significance_level = significance_level
         self.trigger_sharpe_ratio = trigger_sharpe_ratio
+        self.signal_count = signal_count
         granularity_scorers = ['Ljung-Box test', 'Sharpe ratio']
         matched_scorer = [
             s for s in granularity_scorers if (
@@ -61,7 +63,7 @@ class MacdSignalDetector(object):
             delta_emsr_emvar=lambda d: d['delta_emsr'].ewm(
                 span=self.generic_ema_span, adjust=False
             ).var(ddof=1)
-        ).tail(2)
+        ).tail(self.signal_count)
         sig = df_sig.iloc[-1]
         delta_macd_diff_emci = scs.t.interval(
             alpha=(1 - self.significance_level),
