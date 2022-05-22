@@ -41,7 +41,7 @@ class MacdSignalDetector(object):
         feature_dict = {
             g: self._calculate_adjusted_macd(df=d).pipe(
                 lambda f: self._calculate_ewm_sharpe_ratio(
-                    df=f, span=self.generic_ema_span,
+                    df=f,
                     is_short=(f['macd'].iloc[-1] < f['macd_ema'].iloc[-1])
                 )
             ) for g, d in history_dict.items()
@@ -67,8 +67,8 @@ class MacdSignalDetector(object):
         sig = df_sig.iloc[-1]
         delta_macd_diff_emci = scs.t.interval(
             alpha=(1 - self.significance_level),
-            df=(self.macd_ema_span - 1), loc=sig['delta_macd_diff_ema'],
-            scale=np.sqrt(sig['delta_macd_diff_emvar'] / self.macd_ema_span)
+            df=(self.generic_ema_span - 1), loc=sig['delta_macd_diff_ema'],
+            scale=np.sqrt(sig['delta_macd_diff_emvar'] / self.generic_ema_span)
         )
         delta_emsr_emci = scs.t.interval(
             alpha=(1 - self.significance_level),
@@ -144,6 +144,16 @@ class MacdSignalDetector(object):
             d['macd'].ewm(span=self.macd_ema_span, adjust=False).mean()
         )
 
+    @staticmethod
+    def _calculate_emci(series, span, significance_level=0.01):
+        return scs.t.interval(
+            alpha=(1 - significance_level), df=(span - 1),
+            loc=series.ewm(span=span, adjust=False).mean().iloc[-1],
+            scale=np.sqrt(
+                series.ewm(span=span, adjust=False).var(ddof=1).iloc[-1] / span
+            )
+        )
+
     def _select_best_granularity(self, feature_dict):
         if len(feature_dict) == 1:
             granularity = list(feature_dict.keys())[0]
@@ -177,8 +187,7 @@ class MacdSignalDetector(object):
         self.__logger.debug(f'granularity: {granularity}')
         return granularity
 
-    @staticmethod
-    def _calculate_ewm_sharpe_ratio(df, span=None, is_short=False):
+    def _calculate_ewm_sharpe_ratio(self, df, is_short=False):
         return df.assign(
             spread=lambda d: (d['ask'] - d['bid'])
         ).assign(
@@ -189,8 +198,11 @@ class MacdSignalDetector(object):
             )
         ).assign(
             emsr=lambda d: (
-                d['return_rate'].ewm(span=span, adjust=False).mean()
-                / d['return_rate'].ewm(span=span, adjust=False).std(ddof=1)
+                d['return_rate'].ewm(
+                    span=self.generic_ema_span, adjust=False
+                ).mean() / d['return_rate'].ewm(
+                    span=self.generic_ema_span, adjust=False
+                ).std(ddof=1)
             )
         )
 
