@@ -39,11 +39,8 @@ class MacdSignalDetector(object):
 
     def detect(self, history_dict, position_side=None):
         feature_dict = {
-            g: self._calculate_adjusted_macd(df=d).pipe(
-                lambda f: self._calculate_ewm_sharpe_ratio(
-                    df=f,
-                    is_short=(f['macd'].iloc[-1] < f['macd_ema'].iloc[-1])
-                )
+            g: self._calculate_ewm_sharpe_ratio(
+                df_macd=self._calculate_adjusted_macd(df_rate=d)
             ) for g, d in history_dict.items()
         }
         granularity = self._select_best_granularity(feature_dict=feature_dict)
@@ -64,22 +61,22 @@ class MacdSignalDetector(object):
         if (df_sig['macd'] > df_sig['macd_ema']).all():
             if ((df_sig['emsr'] > 0).all()
                     and ((macd_diff_emci[0] > 0 and emsr_emci[0] > 0)
-                         or sig['emsr'] >= self.trigger_sharpe_ratio)):
+                         or sig['emsr'] > self.trigger_sharpe_ratio)):
                 act = 'long'
-            elif ((position_side == 'long' and (df_sig['emsr'] < 0).all()
-                   and (macd_diff_emci[1] < 0 or emsr_emci[1] < 0))
-                  or position_side == 'short'):
+            elif ((position_side == 'short' and (df_sig['emsr'] > 0).all())
+                  or (position_side == 'long' and (df_sig['emsr'] < 0).all()
+                      and macd_diff_emci[1] < 0 and emsr_emci[1] < 0)):
                 act = 'closing'
             else:
                 act = None
         elif (df_sig['macd'] < df_sig['macd_ema']).all():
-            if ((df_sig['emsr'] > 0).all()
-                    and ((macd_diff_emci[1] < 0 and emsr_emci[0] > 0)
-                         or sig['emsr'] >= self.trigger_sharpe_ratio)):
+            if ((df_sig['emsr'] < 0).all()
+                    and ((macd_diff_emci[1] < 0 and emsr_emci[1] < 0)
+                         or sig['emsr'] < -self.trigger_sharpe_ratio)):
                 act = 'short'
-            elif ((position_side == 'short' and (df_sig['emsr'] < 0).all()
-                   and (macd_diff_emci[0] > 0 or emsr_emci[1] < 0))
-                  or position_side == 'long'):
+            elif ((position_side == 'long' and (df_sig['emsr'] < 0).all())
+                  or (position_side == 'short' and (df_sig['emsr'] > 0).all()
+                      and macd_diff_emci[0] > 0 and emsr_emci[0] > 0)):
                 act = 'closing'
             else:
                 act = None
@@ -95,22 +92,22 @@ class MacdSignalDetector(object):
                 'MACD-EMA:{0:>10}{1:>18}'.format(
                     '{:.1g}'.format(sig['macd'] - sig['macd_ema']),
                     np.array2string(
-                        np.array(macd_diff_emci),
+                        macd_diff_emci,
                         formatter={'float_kind': lambda f: f'{f:.1g}'}
                     )
                 ),
                 'EMSR:{0:>9}{1:>17}'.format(
                     '{:.1g}'.format(sig['emsr']),
                     np.array2string(
-                        np.array(emsr_emci),
+                        emsr_emci,
                         formatter={'float_kind': lambda f: f'{f:.1g}'}
                     )
                 )
             )
         }
 
-    def _calculate_adjusted_macd(self, df):
-        return df.dropna(subset=['ask', 'bid']).reset_index().assign(
+    def _calculate_adjusted_macd(self, df_rate):
+        return df_rate.dropna(subset=['ask', 'bid']).reset_index().assign(
             mid=lambda d: d[['ask', 'bid']].mean(axis=1),
             delta_sec=lambda d: d['time'].diff().dt.total_seconds()
         ).set_index('time').assign(
@@ -125,11 +122,14 @@ class MacdSignalDetector(object):
 
     @staticmethod
     def _calculate_emci(series, span, significance_level=0.01):
-        return scs.t.interval(
-            alpha=(1 - significance_level), df=(span - 1),
-            loc=series.ewm(span=span, adjust=False).mean().iloc[-1],
-            scale=np.sqrt(
-                series.ewm(span=span, adjust=False).var(ddof=1).iloc[-1] / span
+        return np.array(
+            scs.t.interval(
+                alpha=(1 - significance_level), df=(span - 1),
+                loc=series.ewm(span=span, adjust=False).mean().iloc[-1],
+                scale=np.sqrt(
+                    series.ewm(span=span, adjust=False).var(ddof=1).iloc[-1]
+                    / span
+                )
             )
         )
 
@@ -166,12 +166,12 @@ class MacdSignalDetector(object):
         self.__logger.debug(f'granularity: {granularity}')
         return granularity
 
-    def _calculate_ewm_sharpe_ratio(self, df, is_short=False):
-        return df.assign(
+    def _calculate_ewm_sharpe_ratio(self, df_macd):
+        return df_macd.assign(
             spread=lambda d: (d['ask'] - d['bid'])
         ).assign(
             return_rate=lambda d: (
-                (np.exp(np.log(d['mid']).diff()) - 1) * (-1 if is_short else 1)
+                (np.exp(np.log(d['mid']).diff()) - 1)
                 / d['delta_sec'] * d['delta_sec'].mean()
                 / d['spread'] * d['spread'].mean()
             )

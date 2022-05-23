@@ -11,6 +11,7 @@ from pprint import pformat
 import numpy as np
 import pandas as pd
 from oandacli.util.logger import log_response
+from requests.exceptions import ContentDecodingError
 from v20 import Context, V20ConnectionError, V20Timeout
 
 from .bet import BettingSystem
@@ -74,7 +75,8 @@ class OandaTraderCore(object):
             for r in range(self.__retry_count + 1):
                 try:
                     ret = func(self, *args, **kwargs)
-                except (V20ConnectionError, V20Timeout, APIResponseError) as e:
+                except (V20ConnectionError, V20Timeout, ContentDecodingError,
+                        APIResponseError) as e:
                     if self.__ignore_api_error or r < self.__retry_count:
                         self.__logger.warning(f'Retry due to an error: {e}')
                     else:
