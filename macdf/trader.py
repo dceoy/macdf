@@ -436,8 +436,7 @@ class AutoTrader(OandaTraderCore):
     def __init__(self, granularities='D', max_spread_ratio=0.01,
                  sleeping_ratio=0, fast_ema_span=12, slow_ema_span=26,
                  macd_ema_span=9, generic_ema_span=9, significance_level=0.01,
-                 trigger_sharpe_ratio=1, granularity_scorer='Ljung-Box test',
-                 **kwargs):
+                 granularity_scorer='Ljung-Box test', **kwargs):
         super().__init__(**kwargs)
         self.__logger = logging.getLogger(__name__)
         self.__sleeping_ratio = float(sleeping_ratio)
@@ -452,7 +451,6 @@ class AutoTrader(OandaTraderCore):
             macd_ema_span=int(macd_ema_span),
             generic_ema_span=int(generic_ema_span),
             significance_level=float(significance_level),
-            trigger_sharpe_ratio=float(trigger_sharpe_ratio),
             granularity_scorer=granularity_scorer
         )
         self.__cache_length = min(

@@ -13,7 +13,7 @@ import statsmodels.api as sm
 class MacdSignalDetector(object):
     def __init__(self, fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
                  generic_ema_span=9, significance_level=0.01,
-                 trigger_sharpe_ratio=1, granularity_scorer='Ljung-Box test'):
+                 granularity_scorer='Ljung-Box test'):
         assert fast_ema_span < slow_ema_span, 'invalid spans'
         self.__logger = logging.getLogger(__name__)
         self.fast_ema_span = fast_ema_span
@@ -21,7 +21,6 @@ class MacdSignalDetector(object):
         self.macd_ema_span = macd_ema_span
         self.generic_ema_span = generic_ema_span
         self.significance_level = significance_level
-        self.trigger_sharpe_ratio = trigger_sharpe_ratio
         granularity_scorers = ['Ljung-Box test', 'Sharpe ratio']
         matched_scorer = [
             s for s in granularity_scorers if (
@@ -57,28 +56,17 @@ class MacdSignalDetector(object):
             df=(self.generic_ema_span - 1), loc=sig['sr_ema'],
             scale=sig['sr_emse']
         )
-        if sig['macd'] > sig['macd_ema']:
-            if (sig['sr_ema'] > 0
-                    and ((macd_diff_ci[0] > 0 and emsr_ci[0] > 0)
-                         or sig['sr_ema'] > self.trigger_sharpe_ratio)):
-                act = 'long'
-            elif ((position_side == 'short'
-                   and (macd_diff_ci[0] > 0 or emsr_ci[0] > 0))
-                  or (position_side == 'long' and emsr_ci[1] < 0)):
-                act = 'closing'
-            else:
-                act = None
-        elif sig['macd'] < sig['macd_ema']:
-            if (sig['sr_ema'] < 0
-                    and ((macd_diff_ci[1] < 0 and emsr_ci[1] < 0)
-                         or sig['sr_ema'] < -self.trigger_sharpe_ratio)):
-                act = 'short'
-            elif ((position_side == 'long'
-                   and (macd_diff_ci[1] < 0 or emsr_ci[1] < 0))
-                  or (position_side == 'short' and emsr_ci[0] > 0)):
-                act = 'closing'
-            else:
-                act = None
+        if macd_diff_ci[0] > 0 and emsr_ci[0] > 0:
+            act = 'long'
+        elif macd_diff_ci[1] < 0 and emsr_ci[1] < 0:
+            act = 'short'
+        elif ((position_side == 'short'
+               and ((emsr_ci[0] > 0 and sig['macd'] > sig['macd_ema'])
+                    or (macd_diff_ci[0] > 0 and sig['sr_ema'] > 0)))
+              or (position_side == 'long'
+                  and ((emsr_ci[1] < 0 and sig['macd'] < sig['macd_ema'])
+                       or (macd_diff_ci[1] < 0 and sig['sr_ema'] < 0)))):
+            act = 'closing'
         else:
             act = None
         return {
@@ -86,17 +74,17 @@ class MacdSignalDetector(object):
             'macd_diff_ci_lower': macd_diff_ci[0],
             'macd_diff_ci_upper': macd_diff_ci[1],
             'emsr_ci_lower': emsr_ci[0], 'emsr_ci_upper': emsr_ci[1],
-            'log_str': '{0:^7}|{1:^41}|{2:^35}|'.format(
-                self._parse_granularity(granularity=granularity),
+            'log_str': '{0:^7}|{1:^41}|{2:^34}|'.format(
+                granularity,
                 'MACD-EMA:{0:>10}{1:>18}'.format(
-                    '{:.1g}'.format(macd_diff_ci.mean()),
+                    '{:.1g}'.format(sig['macd'] - sig['macd_ema']),
                     np.array2string(
                         macd_diff_ci,
                         formatter={'float_kind': lambda f: f'{f:.1g}'}
                     )
                 ),
-                'EMSR:{0:>9}{1:>17}'.format(
-                    '{:.1g}'.format(emsr_ci.mean()),
+                'EMSR:{0:>9}{1:>16}'.format(
+                    '{:.1g}'.format(sig['sr_ema']),
                     np.array2string(
                         emsr_ci, formatter={'float_kind': lambda f: f'{f:.1g}'}
                     )
@@ -179,10 +167,3 @@ class MacdSignalDetector(object):
     @staticmethod
     def _calculate_ci(*args, **kwargs):
         return np.array(scs.t.interval(*args, **kwargs))
-
-    @staticmethod
-    def _parse_granularity(granularity='S5'):
-        return '{0:0>2}{1:1}'.format(
-            int(granularity[1:] if len(granularity) > 1 else 1),
-            granularity[0]
-        )
