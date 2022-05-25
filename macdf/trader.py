@@ -75,8 +75,8 @@ class OandaTraderCore(object):
             for r in range(self.__retry_count + 1):
                 try:
                     ret = func(self, *args, **kwargs)
-                except (V20ConnectionError, V20Timeout, ContentDecodingError,
-                        APIResponseError) as e:
+                except (V20ConnectionError, V20Timeout, APIResponseError,
+                        ContentDecodingError, AttributeError) as e:
                     if self.__ignore_api_error or r < self.__retry_count:
                         self.__logger.warning(f'Retry due to an error: {e}')
                     else:
