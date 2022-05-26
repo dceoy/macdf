@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import signal
-from math import ceil
+from math import floor
 from pathlib import Path
 from pprint import pformat
 
@@ -137,11 +137,13 @@ class OandaTraderCore(object):
             else:
                 res = self.__api.order.create(**f_args)
             log_response(res, logger=self.__logger)
-            if not (100 <= res.status <= 399):
+            if res.status == 404:
+                self.__logger.warning(f'response with 404: {res.body}')
+            elif not (100 <= res.status <= 399):
                 raise APIResponseError(
                     'unexpected response:' + os.linesep + pformat(res.body)
                 )
-            elif self.__order_log_path:
+            if self.__order_log_path:
                 self._write_data(res.raw_body, path=self.__order_log_path)
 
     def refresh_oanda_dicts(self):
@@ -315,7 +317,7 @@ class OandaTraderCore(object):
     def _determine_order_units(self, instrument, side):
         max_size = int(self.__inst_dict[instrument]['maximumOrderUnits'])
         avail_size = max(
-            ceil(
+            floor(
                 (
                     self.margin_avail - self.balance *
                     self.__preserved_margin_ratio
@@ -323,7 +325,7 @@ class OandaTraderCore(object):
             ), 0
         )
         self.__logger.debug(f'avail_size: {avail_size}')
-        unit_size = ceil(
+        unit_size = floor(
             self.balance * self.__unit_margin_ratio
             / self.unit_costs[instrument]
         )

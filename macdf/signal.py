@@ -118,14 +118,14 @@ class MacdSignalDetector(object):
         return df_macd.assign(
             log_return=lambda d: np.log(d['mid']).diff(),
             delta_sec=lambda d: d.index.to_series().diff().dt.total_seconds(),
-            spread_ratio=lambda d: (1 - ((d['ask'] - d['bid']) / d['mid']))
+            spread=lambda d: (d['ask'] - d['bid'])
         ).assign(
-            return_per_sec=lambda d:
-            (np.exp(d['log_return'] / d['delta_sec']) - 1)
+            pl_per_sec=lambda d: (np.exp(d['log_return'] / d['delta_sec']) - 1)
         ).assign(
             sharpe_ratio=lambda d: (
-                d['return_per_sec'] * d['spread_ratio']
-                / d['return_per_sec'].rolling(window=span).std(ddof=1)
+                d['pl_per_sec']
+                * (d['spread'].rolling(window=span).mean() / d['spread'])
+                / d['pl_per_sec'].rolling(window=span).std(ddof=1)
             )
         ).assign(
             sr_ema=lambda d:
@@ -154,7 +154,7 @@ class MacdSignalDetector(object):
             best_g = pd.DataFrame([
                 {
                     'granularity': g,
-                    'sharpe_ratio': d['return_per_sec'].dropna().pipe(
+                    'sharpe_ratio': d['pl_per_sec'].dropna().pipe(
                         lambda s: (s.mean() / s.std(ddof=1))
                     )
                 } for g, d in feature_dict.items()

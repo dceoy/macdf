@@ -31,7 +31,7 @@ Options:
     --csv=<path>            Write data with CSV into a file
     --quiet                 Suppress messages
     --dry-run               Invoke a trader with dry-run mode
-    --retry-count=<int>     Set the retry count due to API errors [default: 0]
+    --retry-count=<int>     Set the retry count due to API errors [default: 1]
     --granularity=<str>     Set the granularities [default: D]
                             { S5, S10, S15, S30, M1, M2, M4, M5, M10, M15, M30,
                               H1, H2, H3, H4, H6, H8, H12, D, W, M }
