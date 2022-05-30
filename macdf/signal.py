@@ -117,14 +117,12 @@ class MacdSignalDetector(object):
     def _calculate_sharpe_ratio(df_macd, span):
         return df_macd.assign(
             log_return=lambda d: np.log(d['mid']).diff(),
-            delta_sec=lambda d: d.index.to_series().diff().dt.total_seconds(),
-            spread=lambda d: (d['ask'] - d['bid'])
+            delta_sec=lambda d: d.index.to_series().diff().dt.total_seconds()
         ).assign(
             pl_per_sec=lambda d: (np.exp(d['log_return'] / d['delta_sec']) - 1)
         ).assign(
             sharpe_ratio=lambda d: (
-                d['pl_per_sec']
-                * (d['spread'].rolling(window=span).mean() / d['spread'])
+                d['pl_per_sec'] * d['bid'] / d['ask']
                 / d['pl_per_sec'].rolling(window=span).std(ddof=1)
             )
         ).assign(
