@@ -97,7 +97,7 @@ class MacdSignalDetector(object):
 
     @staticmethod
     def _calculate_macd(df_rate, fast_ema_span, slow_ema_span, macd_ema_span):
-        return df_rate[['ask', 'bid']].dropna().assign(
+        return df_rate.dropna().assign(
             mid=lambda d: d[['ask', 'bid']].mean(axis=1)
         ).assign(
             macd=lambda d: (
@@ -119,7 +119,12 @@ class MacdSignalDetector(object):
             log_return=lambda d: np.log(d['mid']).diff(),
             delta_sec=lambda d: d.index.to_series().diff().dt.total_seconds()
         ).assign(
-            pl_per_sec=lambda d: (np.exp(d['log_return'] / d['delta_sec']) - 1)
+            pl_per_sec=lambda d: (
+                np.exp(
+                    d['log_return'] / d['delta_sec']
+                    * d['volume'] / d['volume'].mean()
+                ) - 1
+            )
         ).assign(
             sharpe_ratio=lambda d: (
                 d['pl_per_sec'] * d['bid'] / d['ask']

@@ -473,7 +473,7 @@ class AutoTrader(OandaTraderCore):
 
     def make_decision(self, instrument):
         df_r = self.fetch_latest_price_df(instrument=instrument)
-        st = self.determine_sig_state(df_rate=df_r)
+        st = self.determine_sig_state(df_rate=df_r.assign(volume=1))
         new_units = self.design_and_place_order(
             instrument=instrument, act=st['act']
         )
@@ -515,8 +515,8 @@ class AutoTrader(OandaTraderCore):
                 g: pd.concat([
                     self.fetch_candle_df(
                         instrument=i, granularity=g, count=self.__cache_length
-                    )[['ask', 'bid']],
-                    df_rate[['ask', 'bid']]
+                    )[['ask', 'bid', 'volume']],
+                    df_rate[['ask', 'bid', 'volume']]
                 ]) for g in self.__granularities
             },
             position_side=(pos['side'] if pos else None)
