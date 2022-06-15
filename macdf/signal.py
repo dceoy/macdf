@@ -12,7 +12,7 @@ import statsmodels.api as sm
 
 class MacdSignalDetector(object):
     def __init__(self, fast_ema_span=12, slow_ema_span=26, macd_ema_span=9,
-                 generic_ema_span=9, significance_level=0.01,
+                 generic_ema_span=9, significance_level=0.01, volume_factor=0,
                  granularity_scorer='Ljung-Box test'):
         assert fast_ema_span < slow_ema_span, 'invalid spans'
         self.__logger = logging.getLogger(__name__)
@@ -21,6 +21,7 @@ class MacdSignalDetector(object):
         self.macd_ema_span = macd_ema_span
         self.generic_ema_span = generic_ema_span
         self.significance_level = significance_level
+        self.volume_factor = volume_factor
         granularity_scorers = ['Ljung-Box test', 'Sharpe ratio']
         matched_scorer = [
             s for s in granularity_scorers if (
@@ -40,7 +41,8 @@ class MacdSignalDetector(object):
                 df_macd=self._calculate_macd(
                     df_rate=d, fast_ema_span=self.fast_ema_span,
                     slow_ema_span=self.slow_ema_span,
-                    macd_ema_span=self.macd_ema_span
+                    macd_ema_span=self.macd_ema_span,
+                    volume_factor=self.volume_factor
                 ),
                 span=self.generic_ema_span
             ) for g, d in history_dict.items()
@@ -96,13 +98,18 @@ class MacdSignalDetector(object):
         }
 
     @staticmethod
-    def _calculate_macd(df_rate, fast_ema_span, slow_ema_span, macd_ema_span):
+    def _calculate_macd(df_rate, fast_ema_span, slow_ema_span, macd_ema_span,
+                        volume_factor=0):
         return df_rate.dropna().assign(
-            mid=lambda d: d[['ask', 'bid']].mean(axis=1)
+            mid=lambda d: d[['ask', 'bid']].mean(axis=1),
+            volume_weight=lambda d:
+            np.power(d['volume'], volume_factor).pipe(lambda s: (s / s.mean()))
         ).assign(
             macd=lambda d: (
-                d['mid'].ewm(span=fast_ema_span, adjust=False).mean()
-                - d['mid'].ewm(span=slow_ema_span, adjust=False).mean()
+                (
+                    d['mid'].ewm(span=fast_ema_span, adjust=False).mean()
+                    - d['mid'].ewm(span=slow_ema_span, adjust=False).mean()
+                ) * d['volume_weight']
             )
         ).assign(
             macd_ema=lambda d:
@@ -119,12 +126,8 @@ class MacdSignalDetector(object):
             log_return=lambda d: np.log(d['mid']).diff(),
             delta_sec=lambda d: d.index.to_series().diff().dt.total_seconds()
         ).assign(
-            pl_per_sec=lambda d: (
-                np.exp(
-                    d['log_return'] / d['delta_sec']
-                    * d['volume'] / d['volume'].mean()
-                ) - 1
-            )
+            pl_per_sec=lambda d:
+            (np.exp(d['log_return'] / d['delta_sec'] * d['volume_weight']) - 1)
         ).assign(
             sharpe_ratio=lambda d: (
                 d['pl_per_sec'] * d['bid'] / d['ask']

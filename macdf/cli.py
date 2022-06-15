@@ -18,7 +18,7 @@ Usage:
         [--stop-loss-limit=<float>] [--max-spread=<float>]
         [--fast-ema-span=<int>] [--slow-ema-span=<int>] [--macd-ema-span=<int>]
         [--generic-ema-span=<int>] [--significance-level=<float>]
-        [--granularity-scorer=<str>] <instrument>...
+        [--volume-factor=<float>] [--granularity-scorer=<str>] <instrument>...
 
 Options:
     -h, --help              Print help and exit
@@ -59,6 +59,8 @@ Options:
                             Set the generic EMA span [default: 9]
     --significance-level=<float>
                             Set the significance level [default: 0.01]
+    --volume-factor=<float>
+                            Specify the volume weight factor [default: 0]
     --granularity-scorer=<str>
                             Set the granularity scorer [default: ljungboxtest]
                             { ljungboxtest, sharperatio }
@@ -113,6 +115,7 @@ def main():
             macd_ema_span=int(args['--macd-ema-span']),
             generic_ema_span=int(args['--generic-ema-span']),
             significance_level=float(args['--significance-level']),
+            volume_factor=float(args['--volume-factor']),
             granularity_scorer=args['--granularity-scorer'],
             retry_count=int(args['--retry-count']), log_dir_path=None,
             quiet=args['--quiet'], dry_run=args['--dry-run']
