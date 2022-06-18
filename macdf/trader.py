@@ -586,7 +586,7 @@ class AutoTrader(OandaTraderCore):
         ).assign(
             volume_ema=lambda d: d['volume'].fillna(method='ffill').ewm(
                 span=span, adjust=False
-            ).mean(skipna=True),
+            ).mean(),
             hv_ema=lambda d: np.log(d[['ask', 'bid']].mean(axis=1)).diff().ewm(
                 span=span, adjust=False
             ).std(ddof=1)

@@ -126,12 +126,14 @@ class MacdSignalDetector(object):
             log_return=lambda d: np.log(d['mid']).diff(),
             delta_sec=lambda d: d.index.to_series().diff().dt.total_seconds()
         ).assign(
-            pl_per_sec=lambda d:
-            (np.exp(d['log_return'] / d['delta_sec'] * d['volume_weight']) - 1)
+            log_return_rate=lambda d:
+            (d['log_return'] / d['delta_sec'] * d['volume_weight']).fillna(0)
+        ).assign(
+            pl_ratio=lambda d: (np.exp(d['log_return_rate']) - 1)
         ).assign(
             sharpe_ratio=lambda d: (
-                d['pl_per_sec'] * d['bid'] / d['ask']
-                / d['pl_per_sec'].rolling(window=span).std(ddof=1)
+                d['pl_ratio'] * d['bid'] / d['ask']
+                / d['pl_ratio'].rolling(window=span).std(ddof=1)
             )
         ).assign(
             sr_ema=lambda d:
@@ -160,9 +162,8 @@ class MacdSignalDetector(object):
             best_g = pd.DataFrame([
                 {
                     'granularity': g,
-                    'sharpe_ratio': d['pl_per_sec'].dropna().pipe(
-                        lambda s: (s.mean() / s.std(ddof=1))
-                    )
+                    'sharpe_ratio':
+                    (d['pl_ratio'].mean() / d['pl_ratio'].std(ddof=1))
                 } for g, d in feature_dict.items()
             ]).pipe(lambda d: d.iloc[d['sharpe_ratio'].idxmax()])
             self.__logger.info(
