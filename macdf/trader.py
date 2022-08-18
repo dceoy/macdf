@@ -437,7 +437,7 @@ class OandaTraderCore(object):
 class AutoTrader(OandaTraderCore):
     def __init__(self, granularities='D', max_spread_ratio=0.01,
                  sleeping_ratio=0, fast_ema_span=12, slow_ema_span=26,
-                 macd_ema_span=9, generic_ema_span=9, significance_level=0.01,
+                 macd_ema_span=9, ssr_window=9, significance_level=0.01,
                  volume_factor=0, granularity_scorer='Ljung-Box test',
                  **kwargs):
         super().__init__(**kwargs)
@@ -452,7 +452,7 @@ class AutoTrader(OandaTraderCore):
             fast_ema_span=int(fast_ema_span),
             slow_ema_span=int(slow_ema_span),
             macd_ema_span=int(macd_ema_span),
-            generic_ema_span=int(generic_ema_span),
+            ssr_window=int(ssr_window),
             significance_level=float(significance_level),
             volume_factor=float(volume_factor),
             granularity_scorer=granularity_scorer
@@ -461,7 +461,7 @@ class AutoTrader(OandaTraderCore):
             max(
                 self.signal_detector.slow_ema_span,
                 self.signal_detector.macd_ema_span,
-                self.signal_detector.generic_ema_span
+                self.signal_detector.ssr_window
             ) * 2,
             5000
         )

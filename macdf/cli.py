@@ -17,7 +17,7 @@ Usage:
         [--take-profit-limit=<float>] [--trailing-stop-limit=<float>]
         [--stop-loss-limit=<float>] [--max-spread=<float>]
         [--fast-ema-span=<int>] [--slow-ema-span=<int>] [--macd-ema-span=<int>]
-        [--generic-ema-span=<int>] [--significance-level=<float>]
+        [--ssr-window=<int>] [--significance-level=<float>]
         [--volume-factor=<float>] [--granularity-scorer=<str>] <instrument>...
 
 Options:
@@ -55,8 +55,7 @@ Options:
     --fast-ema-span=<int>   Set the fast EMA span [default: 12]
     --slow-ema-span=<int>   Set the slow EMA span [default: 26]
     --macd-ema-span=<int>   Set the MACD EMA span [default: 9]
-    --generic-ema-span=<int>
-                            Set the generic EMA span [default: 9]
+    --ssr-window=<int>      Set the SSR window [default: 9]
     --significance-level=<float>
                             Set the significance level [default: 0.01]
     --volume-factor=<float>
@@ -113,7 +112,7 @@ def main():
             fast_ema_span=int(args['--fast-ema-span']),
             slow_ema_span=int(args['--slow-ema-span']),
             macd_ema_span=int(args['--macd-ema-span']),
-            generic_ema_span=int(args['--generic-ema-span']),
+            ssr_window=int(args['--ssr-window']),
             significance_level=float(args['--significance-level']),
             volume_factor=float(args['--volume-factor']),
             granularity_scorer=args['--granularity-scorer'],
