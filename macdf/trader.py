@@ -546,13 +546,13 @@ class AutoTrader(OandaTraderCore):
             state = 'OVER-SPREAD'
         elif sig['act'] != 'closing' and sleep_triggers.all():
             act = None
-            state = 'LOW HV AND VOLUME'
+            state = 'LOW HV & \u0394VOLUME'
         elif sig['act'] != 'closing' and sleep_triggers['hv_ema']:
             act = None
             state = 'LOW HV'
-        elif sig['act'] != 'closing' and sleep_triggers['volume_ema']:
+        elif sig['act'] != 'closing' and sleep_triggers['delta_volume_ema']:
             act = None
-            state = 'LOW VOLUME'
+            state = 'LOW \u0394VOLUME'
         elif not sig['act']:
             act = None
             state = '-'
@@ -584,12 +584,13 @@ class AutoTrader(OandaTraderCore):
             instrument=instrument, granularity=granularity,
             count=int(14400 / granularity_min), complete=True
         ).assign(
-            volume_ema=lambda d: d['volume'].fillna(method='ffill').ewm(
+            delta_volume_ema=lambda d:
+            np.square(d['volume'].fillna(method='ffill').diff()).ewm(
                 span=span, adjust=False
             ).mean(),
             hv_ema=lambda d: np.log(d[['ask', 'bid']].mean(axis=1)).diff().ewm(
                 span=span, adjust=False
             ).std(ddof=1)
-        )[['volume_ema', 'hv_ema']].pipe(
+        )[['delta_volume_ema', 'hv_ema']].pipe(
             lambda d: (d.iloc[-1] < d.quantile(self.__sleeping_ratio))
         )
