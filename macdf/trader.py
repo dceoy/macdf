@@ -590,7 +590,7 @@ class AutoTrader(OandaTraderCore):
             ).mean(),
             hv_ema=lambda d: np.log(d[['ask', 'bid']].mean(axis=1)).diff().ewm(
                 span=span, adjust=False
-            ).std(ddof=1)
+            ).std()
         )[['delta_volume_ema', 'hv_ema']].pipe(
             lambda d: (d.iloc[-1] < d.quantile(self.__sleeping_ratio))
         )

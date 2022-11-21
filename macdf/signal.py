@@ -140,7 +140,7 @@ class MacdSignalDetector(object):
             signed_sharpe_ratio=lambda d: (
                 d['pl_ratio'].ewm(span=span, adjust=False).mean()
                 * d['bid'] / d['ask']
-                / d['pl_ratio'].ewm(span=span, adjust=False).std(ddof=1)
+                / d['pl_ratio'].ewm(span=span, adjust=False).std()
             )
         )
 
@@ -163,7 +163,7 @@ class MacdSignalDetector(object):
                 {
                     'granularity': g,
                     'sharpe_ratio':
-                    (d['pl_ratio'].mean() / d['pl_ratio'].std(ddof=1))
+                    (d['pl_ratio'].mean() / d['pl_ratio'].std())
                 } for g, d in feature_dict.items()
             ]).pipe(lambda d: d.iloc[d['sharpe_ratio'].idxmax()])
             self.__logger.info(
